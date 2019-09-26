@@ -170,14 +170,18 @@ public class WfFeaturePackBuildMojo extends AbstractFeaturePackBuildMojo {
         }
 
         FeaturePackLocation fpl = buildConfig.getProducer();
-        String channel = fpl.getChannelName();
-        if(channel == null || channel.isEmpty()) {
-            final String v = project.getVersion();
-            final int i = v.indexOf('.');
-            channel = i < 0 ? v : v.substring(0, i);
+        // If FP is a maven artifact, we don't have an Universe, set the version.
+        if (!fpl.hasBuild() && !fpl.hasUniverse()) {
+            fpl = FeaturePackLocation.fromString(fpl.toString() + ":" + project.getVersion());
+        } else {
+            String channel = fpl.getChannelName();
+            if (channel == null || channel.isEmpty()) {
+                final String v = project.getVersion();
+                final int i = v.indexOf('.');
+                channel = i < 0 ? v : v.substring(0, i);
+            }
+            fpl = new FeaturePackLocation(fpl.getUniverse(), fpl.getProducerName(), channel, null, project.getVersion());
         }
-        fpl = new FeaturePackLocation(fpl.getUniverse(), fpl.getProducerName(), channel, null, project.getVersion());
-
         // feature-pack builder
         final FeaturePackDescription.Builder fpBuilder = FeaturePackDescription.builder(FeaturePackSpec.builder(fpl.getFPID()));
 
