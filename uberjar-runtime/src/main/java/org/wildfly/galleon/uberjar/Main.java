@@ -18,10 +18,14 @@ package org.wildfly.galleon.uberjar;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.HashSet;
 import java.util.Set;
@@ -67,11 +71,18 @@ public class Main {
                 Files.createDirectory(destDir);
             } else {
                 destDir = Files.createTempDirectory(null);
-            }   long t = System.currentTimeMillis();
+            }
+            long t = System.currentTimeMillis();
             unzip(wf, destDir.toFile());
             System.out.println("Installed Wildfly and application in " + destDir + ", took " + (System.currentTimeMillis() - t) +"ms");
         }
         if (!openshift) {
+            Runtime.getRuntime().addShutdownHook(new Thread() {
+                @Override
+                public void run() {
+                    deleteDir(destDir);
+                }
+            });
             final StandaloneServer server = EmbeddedProcessFactory.createStandaloneServer(Configuration.Builder.of(destDir).build());
             server.start();
         }
@@ -102,6 +113,40 @@ public class Main {
                 zis.closeEntry();
                 ze = zis.getNextEntry();
             }
+        }
+    }
+
+    private static void deleteDir(Path root) {
+        if (root == null || !Files.exists(root)) {
+            return;
+        }
+        try {
+            Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                        throws IOException {
+                    try {
+                        Files.delete(file);
+                    } catch (IOException ex) {
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path dir, IOException e)
+                        throws IOException {
+                    if (e != null) {
+                        // directory iteration failed
+                        throw e;
+                    }
+                    try {
+                        Files.delete(dir);
+                    } catch (IOException ex) {
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException e) {
         }
     }
 }
