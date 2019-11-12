@@ -138,16 +138,16 @@ public final class UberJarMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         Path contentRoot = Paths.get(project.getBuild().getDirectory()).resolve("uberjar-build-artifacts");
         Path targetDir = Paths.get(project.getBuild().getDirectory()).resolve("uberjar");
+        Path jarFile = targetDir.resolve(this.project.getBuild().getFinalName() + "-wildfly-uberjar.jar");
         IoUtils.recursiveDelete(contentRoot);
-        IoUtils.recursiveDelete(targetDir);
 
         Path wildflyDir = contentRoot.resolve("wildfly");
         Path contentDir = contentRoot.resolve("jar-content");
-        Path jarFile = targetDir.resolve(this.project.getBuild().getFinalName() + "-wildfly-uberjar.jar");
         try {
             Files.createDirectory(contentRoot);
             Files.createDirectory(targetDir);
             Files.createDirectory(contentDir);
+            Files.deleteIfExists(jarFile);
         } catch (IOException ex) {
             throw new MojoExecutionException("Packaging wildfly failed", ex);
         }
