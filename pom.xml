@@ -47,6 +47,8 @@
     <module>maven-plugin</module>
     <module>feature-spec-gen</module>
     <module>docs</module>
+    <module>uberjar-maven-plugin</module>
+    <module>uberjar-runtime</module>
   </modules>
 
   <properties>
