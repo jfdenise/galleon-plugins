@@ -137,11 +137,14 @@ public final class UberJarMojo extends AbstractMojo {
     @Parameter(alias = "root-url-path", defaultValue = "true")
     private boolean rootUrlPath;
 
+    @Parameter(alias = "default-feature-pack-location", defaultValue = "wildfly@maven(org.jboss.universe:community-universe)")
+    private String defaultFpl;
+
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
         Path contentRoot = Paths.get(project.getBuild().getDirectory()).resolve("uberjar-build-artifacts");
         Path targetDir = Paths.get(project.getBuild().getDirectory()).resolve("uberjar");
-        Path jarFile = targetDir.resolve(this.project.getBuild().getFinalName() + "-wildfly-uberjar.jar");
+        Path jarFile = Paths.get(project.getBuild().getDirectory()).resolve(this.project.getBuild().getFinalName() + "-wildfly-uberjar.jar");
         IoUtils.recursiveDelete(contentRoot);
 
         Path wildflyDir = contentRoot.resolve("wildfly");
@@ -191,7 +194,6 @@ public final class UberJarMojo extends AbstractMojo {
 
         final Path provisioningFile = Paths.get(project.getBasedir().getAbsolutePath()).resolve("galleon").resolve("provisioning.xml");
         ProvisioningConfig config;
-        String defaultLocation = "wildfly@maven(org.jboss.universe:community-universe)";
         if (!layers.isEmpty() || !excludeLayers.isEmpty()) {
             ConfigModel.Builder configBuilder = ConfigModel.
                     builder("standalone", "standalone.xml");
@@ -208,7 +210,7 @@ public final class UberJarMojo extends AbstractMojo {
                 pluginOptions.put(Constants.OPTIONAL_PACKAGES, Constants.PASSIVE_PLUS);
             }
             FeaturePackConfig dependency = FeaturePackConfig.
-                    builder(FeaturePackLocation.fromString(defaultLocation)).
+                    builder(FeaturePackLocation.fromString(defaultFpl)).
                     setInheritPackages(false).setInheritConfigs(false).build();
             config = ProvisioningConfig.builder().addFeaturePackDep(dependency).addConfig(configBuilder.build()).build();
         } else {
@@ -216,7 +218,7 @@ public final class UberJarMojo extends AbstractMojo {
                 config = ProvisioningXmlParser.parse(provisioningFile);
             } else {
                 FeaturePackConfig dependency = FeaturePackConfig.
-                        builder(FeaturePackLocation.fromString(defaultLocation)).
+                        builder(FeaturePackLocation.fromString(defaultFpl)).
                         setInheritPackages(true).setInheritConfigs(false).includeDefaultConfig("standalone", "standalone.xml").build();
                 config = ProvisioningConfig.builder().addFeaturePackDep(dependency).build();
             }

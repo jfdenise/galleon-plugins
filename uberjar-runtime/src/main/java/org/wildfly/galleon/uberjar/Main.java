@@ -26,9 +26,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -58,34 +56,15 @@ public class Main {
         try ( InputStream wf = Main.class.getResourceAsStream("/wildfly.zip")) {
             unzip(wf, destDir.toFile());
         }
-        System.out.println("Installed Wildfly and application in " + destDir + ", took " + (System.currentTimeMillis() - t) + "ms");
+        System.out.println("Installed server and application in " + destDir + ", took " + (System.currentTimeMillis() - t) + "ms");
         try {
-            List<String> command = new ArrayList<>();
-            Path openshiftLauncher = destDir.resolve("bin/openshift-launch.sh");
-            Path defaultLauncher = destDir.resolve("bin/standalone.sh");
-            if (Files.exists(openshiftLauncher)) {
-                command.add(openshiftLauncher.toString());
-            } else {
-                command.add(defaultLauncher.toString());
-            }
-            String cli = System.getProperty("org.wildfly.additional.cli.boot.script");
-            if (cli != null) {
-                command.add("--start-mode=admin-only");
-            }
-            for (String a : args) {
-                command.add(a);
-            }
-            for (String sysProp : System.getProperties().stringPropertyNames()) {
-                command.add("-D" + sysProp + "=" + System.getProperty(sysProp));
-            }
-            final ProcessBuilder processBuilder = new ProcessBuilder(command).inheritIO();
-            processBuilder.environment().put("JBOSS_HOME", destDir.toString());
-            Process p = processBuilder.start();
-            p.waitFor();
+            UberJar uberjar = new UberJar(destDir, args);
+            uberjar.run();
         } finally {
             deleteDir(destDir);
         }
     }
+
 
     private static void unzip(InputStream wf, File dir) throws Exception {
         byte[] buffer = new byte[1024];

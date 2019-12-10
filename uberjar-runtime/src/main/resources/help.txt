@@ -1,0 +1,9 @@
+Uberjar
+Usage: java -jar [system properties] <uberjar filename>.jar [arguments]
+
+Where args includes:
+    --uberjar-server-config <config>    An external XML server configuration file path
+                                        to be used by the server.
+
+    --uberjar-cli-script <script>       CLI script to execute at server launch.
+
