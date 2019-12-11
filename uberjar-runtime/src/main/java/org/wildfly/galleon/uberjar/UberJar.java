@@ -32,10 +32,14 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import static org.wildfly.galleon.uberjar.Constants.CLI_SCRIPT;
 import static org.wildfly.galleon.uberjar.Constants.CLI_SCRIPT_PROP;
+import static org.wildfly.galleon.uberjar.Constants.CONFIG;
 import static org.wildfly.galleon.uberjar.Constants.EXTERNAL_SERVER_CONFIG;
 import static org.wildfly.galleon.uberjar.Constants.EXTERNAL_SERVER_CONFIG_PROP;
 import static org.wildfly.galleon.uberjar.Constants.JAVA_OPTS;
 import static org.wildfly.galleon.uberjar.Constants.JBOSS_HOME;
+import static org.wildfly.galleon.uberjar.Constants.OPENSHIFT_CONFIG;
+import static org.wildfly.galleon.uberjar.Constants.OPENSHIFT_LAUNCHER;
+import static org.wildfly.galleon.uberjar.Constants.STANDALONE_LAUNCHER;
 import static org.wildfly.galleon.uberjar.Constants.UBERJAR;
 
 /**
@@ -53,8 +57,8 @@ class UberJar {
     public UberJar(Path jbossHome, String[] args) throws IOException {
         Objects.requireNonNull(jbossHome);
         this.jbossHome = jbossHome;
-        List<String> filteredArgs = handleJarArguments(jbossHome, args);
         Path script = getScript(jbossHome);
+        List<String> filteredArgs = handleJarArguments(jbossHome, args);
         CommandLineBuilder builder = new CommandLineBuilder(script);
         for (String sysProp : System.getProperties().stringPropertyNames()) {
             String value = System.getProperty(sysProp);
@@ -77,8 +81,8 @@ class UberJar {
         if (isWindows()) {
             return jbossHome.resolve("bin/standalone.bat");
         }
-        Path openshiftLauncher = jbossHome.resolve("bin/openshift-launch.sh");
-        Path defaultLauncher = jbossHome.resolve("bin/standalone.sh");
+        Path openshiftLauncher = jbossHome.resolve(OPENSHIFT_LAUNCHER);
+        Path defaultLauncher = jbossHome.resolve(STANDALONE_LAUNCHER);
         if (Files.exists(openshiftLauncher)) {
             openshift = true;
             return openshiftLauncher;
@@ -121,10 +125,17 @@ class UberJar {
         if (!Files.exists(p)) {
             throw new RuntimeException("File " + p + " doesn't exist");
         }
-        String extConfigName = p.getFileName().toString();
-        Path target = jbossHome.resolve("standalone/configuration/" + extConfigName);
+        String targetName = CONFIG;
+        Path configRoot = jbossHome.resolve("standalone/configuration/");
+        if (openshift) {
+            // 2 cases, could have standalone,xml or standalone-openshift.xml config.
+            Path conf = configRoot.resolve(OPENSHIFT_CONFIG);
+            if (Files.exists(conf)) {
+                targetName = OPENSHIFT_CONFIG;
+            }
+        }
+        Path target = configRoot.resolve(targetName);
         Files.copy(p, target);
-        arguments.add("--server-config=" + extConfigName);
     }
 
     private void addCliScript(String path, List<String> arguments) throws IOException {

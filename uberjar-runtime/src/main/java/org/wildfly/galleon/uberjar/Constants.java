@@ -21,7 +21,10 @@ package org.wildfly.galleon.uberjar;
  * @author jdenise
  */
 public class Constants {
-
+    public static final String STANDALONE_LAUNCHER = "bin/standalone.sh";
+    public static final String OPENSHIFT_LAUNCHER = "bin/openshift-launch.sh";
+    public static final String CONFIG = "standalone.xml";
+    public static final String OPENSHIFT_CONFIG = "standalone-openshift.xml";
     public static final String JAVA_OPTS = "JAVA_OPTS";
     public static final String JBOSS_HOME = "JBOSS_HOME";
     public static final String UBERJAR = "wildfly.uberjar.";

@@ -73,6 +73,9 @@ import org.jboss.galleon.xml.ProvisioningXmlParser;
 @Mojo(name = "build-uberjar", requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME, defaultPhase = LifecyclePhase.PACKAGE)
 public final class UberJarMojo extends AbstractMojo {
 
+    private static final String UBERJAR_SUFFIX = "wildfly-uberjar";
+    private static final String JAR = "jar";
+    private static final String WAR = "war";
     @Component
     private RepositorySystem repoSystem;
 
@@ -144,7 +147,7 @@ public final class UberJarMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         Path contentRoot = Paths.get(project.getBuild().getDirectory()).resolve("uberjar-build-artifacts");
         Path targetDir = Paths.get(project.getBuild().getDirectory()).resolve("uberjar");
-        Path jarFile = Paths.get(project.getBuild().getDirectory()).resolve(this.project.getBuild().getFinalName() + "-wildfly-uberjar.jar");
+        Path jarFile = Paths.get(project.getBuild().getDirectory()).resolve(this.project.getBuild().getFinalName() + "-" + UBERJAR_SUFFIX + "." + JAR);
         IoUtils.recursiveDelete(contentRoot);
 
         Path wildflyDir = contentRoot.resolve("wildfly");
@@ -239,7 +242,13 @@ public final class UberJarMojo extends AbstractMojo {
         if (f == null) {
             throw new MojoExecutionException("Cannot package without a primary artifact; please `mvn package` prior to invoking wildfly-galleon:build-uber-jar from the command-line");
         }
-        Files.copy(f.toPath(), wildflyDir.resolve("standalone/deployments/" + (rootUrlPath ? "ROOT.war" : f.getName())));
+        String fileName = f.getName();
+        if (project.getPackaging().equals(WAR)) {
+            if (rootUrlPath) {
+                fileName = "ROOT." + WAR;
+            }
+        }
+        Files.copy(f.toPath(), wildflyDir.resolve("standalone/deployments/" + fileName));
     }
 
     private static void zipServer(Path home, Path contentDir) throws IOException {
@@ -275,14 +284,14 @@ public final class UberJarMojo extends AbstractMojo {
 
         final ArtifactResult result = artifactResolver.resolveArtifact(buildingRequest,
                 new DefaultArtifact("org.wildfly.galleon-plugins", "uberjar-runtime", retrieveRuntimeVersion(),
-                        "provided", "jar", null,
-                        new DefaultArtifactHandler("jar")));
+                        "provided", JAR, null,
+                        new DefaultArtifactHandler(JAR)));
         return result.getArtifact().getFile().toPath();
     }
 
     private void attachJar(Path jarFile) {
         debug("Attaching uberjar %s as a project artifact", jarFile);
-        projectHelper.attachArtifact(project, "jar", jarFile.toFile());
+        projectHelper.attachArtifact(project, JAR, UBERJAR_SUFFIX, jarFile.toFile());
     }
 
     private void debug(String msg, Object... args) {
