@@ -31,7 +31,12 @@ import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import static org.wildfly.galleon.uberjar.Constants.CLI_SCRIPT;
+import static org.wildfly.galleon.uberjar.Constants.CLI_SCRIPT_PROP;
 import static org.wildfly.galleon.uberjar.Constants.EXTERNAL_SERVER_CONFIG;
+import static org.wildfly.galleon.uberjar.Constants.EXTERNAL_SERVER_CONFIG_PROP;
+import static org.wildfly.galleon.uberjar.Constants.JAVA_OPTS;
+import static org.wildfly.galleon.uberjar.Constants.JBOSS_HOME;
+import static org.wildfly.galleon.uberjar.Constants.UBERJAR;
 
 /**
  *
@@ -43,16 +48,28 @@ class UberJar {
     private boolean usage;
     private boolean openshift;
     private final Path jbossHome;
+    private List<String> uberjarSystemProperties = new ArrayList<>();
 
     public UberJar(Path jbossHome, String[] args) throws IOException {
         Objects.requireNonNull(jbossHome);
         this.jbossHome = jbossHome;
         List<String> filteredArgs = handleJarArguments(jbossHome, args);
         Path script = getScript(jbossHome);
-        CommandLineBuilder builder = new CommandLineBuilder(script, filteredArgs);
+        CommandLineBuilder builder = new CommandLineBuilder(script);
         for (String sysProp : System.getProperties().stringPropertyNames()) {
-            builder.addSystemProperty(sysProp, System.getProperty(sysProp));
+            String value = System.getProperty(sysProp);
+            if (sysProp.startsWith(UBERJAR)) {
+                uberjarSystemProperties.add(CommandLineBuilder.formatSystemProperty(sysProp, value));
+                if (EXTERNAL_SERVER_CONFIG_PROP.equals(sysProp)) {
+                    addExternalConfig(value, filteredArgs);
+                } else {
+                    if (CLI_SCRIPT_PROP.equals(sysProp)) {
+                        addCliScript(value, filteredArgs);
+                    }
+                }
+            }
         }
+        builder.addArguments(filteredArgs);
         cmd = builder.build();
     }
 
@@ -80,26 +97,14 @@ class UberJar {
                 }
                 String path = args[i + 1];
                 i += 1;
-                Path p = Paths.get(path);
-                if (!Files.exists(p)) {
-                    throw new RuntimeException("File " + p + " doesn't exist");
-                }
-                String extConfigName = p.getFileName().toString();
-                Path target = jbossHome.resolve("standalone/configuration/" + extConfigName);
-                Files.copy(p, target);
-                arguments.add("--server-config=" + extConfigName);
+                addExternalConfig(path, arguments);
             } else if (CLI_SCRIPT.equals(a)) {
                 if (i == args.length - 1) {
                     throw new RuntimeException("A cli script must be provided");
                 }
                 String path = args[i + 1];
                 i += 1;
-                Path p = Paths.get(path);
-                if (!Files.exists(p)) {
-                    throw new RuntimeException("File " + p + " doesn't exist");
-                }
-                arguments.add("--start-mode=admin-only");
-                arguments.add("-Dorg.wildfly.additional.cli.boot.script=" + path);
+                addCliScript(path, arguments);
             } else if ("--help".equals(a) || "-h".equals(a)) {
                 usage = true;
                 arguments.add(a);
@@ -109,6 +114,26 @@ class UberJar {
 
         }
         return arguments;
+    }
+
+    private void addExternalConfig(String path, List<String> arguments) throws IOException {
+        Path p = Paths.get(path);
+        if (!Files.exists(p)) {
+            throw new RuntimeException("File " + p + " doesn't exist");
+        }
+        String extConfigName = p.getFileName().toString();
+        Path target = jbossHome.resolve("standalone/configuration/" + extConfigName);
+        Files.copy(p, target);
+        arguments.add("--server-config=" + extConfigName);
+    }
+
+    private void addCliScript(String path, List<String> arguments) throws IOException {
+        Path p = Paths.get(path);
+        if (!Files.exists(p)) {
+            throw new RuntimeException("File " + p + " doesn't exist");
+        }
+        arguments.add("--start-mode=admin-only");
+        arguments.add("-Dorg.wildfly.additional.cli.boot.script=" + path);
     }
 
     private void printUsage() throws IOException {
@@ -135,14 +160,29 @@ class UberJar {
 
     private void startServer() throws InterruptedException, IOException {
         final ProcessBuilder processBuilder = new ProcessBuilder(cmd).inheritIO();
-        processBuilder.environment().put("JBOSS_HOME", jbossHome.toString());
+        configureProcessBuilder(processBuilder);
         Process p = processBuilder.start();
         p.waitFor();
     }
 
+    private void configureProcessBuilder(ProcessBuilder processBuilder) {
+        // In some context (eg: java s2i), JAVA_OPTS could contain system properties
+        // specific to uberjar, erasing them for launched server.
+        if (!uberjarSystemProperties.isEmpty()) {
+            String env = System.getenv(JAVA_OPTS);
+            if (env != null) {
+                for (String s : uberjarSystemProperties) {
+                    env = env.replace(s, "");
+                }
+            }
+            processBuilder.environment().put(JAVA_OPTS, env);
+        }
+        processBuilder.environment().put(JBOSS_HOME, jbossHome.toString());
+    }
+
     private void startServerForHelp() throws InterruptedException, IOException {
-        final ProcessBuilder processBuilder = new ProcessBuilder(cmd).redirectErrorStream(true);
-        processBuilder.environment().put("JBOSS_HOME", jbossHome.toString());
+        final ProcessBuilder processBuilder = new ProcessBuilder(cmd).redirectErrorStream(true).redirectInput(ProcessBuilder.Redirect.INHERIT);
+        configureProcessBuilder(processBuilder);
         Process p = processBuilder.start();
         BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
         Thread r = new Thread(() -> {

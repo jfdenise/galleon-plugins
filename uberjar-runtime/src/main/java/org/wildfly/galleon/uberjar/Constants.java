@@ -21,6 +21,12 @@ package org.wildfly.galleon.uberjar;
  * @author jdenise
  */
 public class Constants {
+
+    public static final String JAVA_OPTS = "JAVA_OPTS";
+    public static final String JBOSS_HOME = "JBOSS_HOME";
+    public static final String UBERJAR = "wildfly.uberjar.";
+    public static final String EXTERNAL_SERVER_CONFIG_PROP = UBERJAR + "server.config";
     public static final String EXTERNAL_SERVER_CONFIG = "--uberjar-server-config";
     public static final String CLI_SCRIPT = "--uberjar-cli-script";
+    public static final String CLI_SCRIPT_PROP = UBERJAR + "cli.script";
 }

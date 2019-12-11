@@ -18,7 +18,6 @@ package org.wildfly.galleon.uberjar;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -28,27 +27,39 @@ import java.util.Set;
  *
  * @author jdenise
  */
-public class CommandLineBuilder {
+class CommandLineBuilder {
 
     private final Set<String> systemProperties = new HashSet<>();
     private final Path script;
-    private final List<String> args;
+    private final List<String> args = new ArrayList<>();
 
-    public CommandLineBuilder(Path script, List<String> args) {
+    CommandLineBuilder(Path script) {
         Objects.requireNonNull(script);
         this.script = script;
-        this.args = args == null ? Collections.emptyList() : args;
     }
 
-    public void addSystemProperty(String key, String value) {
-        systemProperties.add("-D" + key + "=" + value);
+    void addArguments(List<String> args) {
+        this.args.addAll(args);
     }
 
-    public List<String> build() {
+    void addSystemProperty(String key, String value) {
+        systemProperties.add(formatSystemProperty(key, value));
+    }
+
+    List<String> build() {
         List<String> cmd = new ArrayList<>();
         cmd.add(script.toString());
         cmd.addAll(args);
         cmd.addAll(systemProperties);
+        System.out.println("COMMAND " + cmd);
         return cmd;
+    }
+
+    static String formatSystemProperty(String key, String value) {
+        String str = "-D" + key;
+        if (!value.isEmpty()) {
+            str += "=" + value;
+        }
+        return str;
     }
 }

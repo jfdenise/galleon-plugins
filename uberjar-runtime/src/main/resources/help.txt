@@ -1,9 +1,11 @@
 Uberjar
-Usage: java -jar [system properties] <uberjar filename>.jar [arguments]
+Usage: java [uberjar system properties] -jar <uberjar filename>.jar [uberjar and server arguments]
 
 Where args includes:
     --uberjar-server-config <config>    An external XML server configuration file path
-                                        to be used by the server.
+                                        to be used by the server. Alternative is 
+                                        wildfly.uberjar.server.config system property.
 
-    --uberjar-cli-script <script>       CLI script to execute at server launch.
+    --uberjar-cli-script <script>       CLI script to execute at server launch. Alternative
+                                        is wildfly.uberjar.cli.script system property.
 
