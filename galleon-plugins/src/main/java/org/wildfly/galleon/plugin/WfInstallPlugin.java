@@ -122,7 +122,17 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private static final ProvisioningOption OPTION_MVN_REPO = ProvisioningOption.builder("jboss-maven-repo")
             .setPersistent(false)
             .build();
-
+    private static final ProvisioningOption OPTION_TRANSFORM_JAKARTA = ProvisioningOption.builder("jboss-jakarta-transform")
+            .setPersistent(false)
+            .setBooleanValueSet()
+            .build();
+    private static final ProvisioningOption OPTION_TRANSFORM_JAKARTA_VERBOSE = ProvisioningOption.builder("jboss-jakarta-transform-verbose")
+            .setPersistent(false)
+            .setBooleanValueSet()
+            .build();
+    private static final ProvisioningOption OPTION_TRANSFORM_JAKARTA_RULES_URL = ProvisioningOption.builder("jboss-jakarta-transform-rules")
+            .setPersistent(false)
+            .build();
     private ProvisioningRuntime runtime;
     private MessageWriter log;
 
@@ -152,7 +162,8 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     @Override
     protected List<ProvisioningOption> initPluginOptions() {
-        return Arrays.asList(OPTION_MVN_DIST, OPTION_DUMP_CONFIG_SCRIPTS, OPTION_FORK_EMBEDDED, OPTION_MVN_REPO);
+        return Arrays.asList(OPTION_MVN_DIST, OPTION_DUMP_CONFIG_SCRIPTS, OPTION_FORK_EMBEDDED,
+                OPTION_MVN_REPO, OPTION_TRANSFORM_JAKARTA, OPTION_TRANSFORM_JAKARTA_RULES_URL, OPTION_TRANSFORM_JAKARTA_VERBOSE);
     }
 
     public ProvisioningRuntime getRuntime() {
@@ -681,7 +692,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 } catch (ProvisioningException e) {
                     throw new IOException("Failed to resolve full coordinates for " + coordsStr, e);
                 }
-                final Path moduleArtifact;
+                Path moduleArtifact;
 
                 log.verbose("Resolving %s", artifact);
                 try {
@@ -690,7 +701,10 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     throw new IOException("Failed to resolve artifact " + artifact, e);
                 }
                 moduleArtifact = artifact.getPath();
-
+                boolean transform = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA, "false"));
+                if (transform) {
+                    moduleArtifact = transform(artifact, targetPath.getParent());
+                }
                 if (thinServer) {
                     // ignore jandex variable, just resolve coordinates to a string
                     final StringBuilder buf = new StringBuilder();
@@ -736,7 +750,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                         finalFileName = target.getName();
                     } else {
                         finalFileName = artifactFileName;
-                        Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
+                        if (!transform) {
+                            Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
+                        }
                     }
                     element.setLocalName("resource-root");
                     attribute.setLocalName("path");
@@ -759,6 +775,35 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             }
             throw t;
         }
+    }
+
+    private Path transform(MavenArtifact artifact, Path targetDir) throws IOException {
+        dev.hargrave.transformer.App t = new dev.hargrave.transformer.App();
+        if (artifact.getArtifactId().equals("aesh-extensions")) {
+            new Exception().printStackTrace();
+        }
+        try {
+            System.out.println("Transforming+" + artifact);
+            boolean verbose = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_VERBOSE, "false"));
+            String rules = runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_RULES_URL);
+            List<String> args = new ArrayList<>();
+            if (verbose) {
+                args.add("-v");
+            }
+            if (rules != null) {
+                args.add("--rules");
+                args.add(rules);
+            }
+            args.add("--jar");
+            args.add(artifact.getPath().toString());
+            args.add("--output");
+            args.add(targetDir.resolve(artifact.getPath().getFileName()).toString());
+            String[] array = new String[args.size()];
+            t.run(args.toArray(array));
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+        return targetDir.resolve(artifact.getPath().getFileName());
     }
 
     public void addExampleConfigs(FeaturePackRuntime fp, ExampleFpConfigs exampleConfigs) throws ProvisioningException {
