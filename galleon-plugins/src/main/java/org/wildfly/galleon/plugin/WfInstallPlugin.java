@@ -779,9 +779,6 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     private Path transform(MavenArtifact artifact, Path targetDir) throws IOException {
         dev.hargrave.transformer.App t = new dev.hargrave.transformer.App();
-        if (artifact.getArtifactId().equals("aesh-extensions")) {
-            new Exception().printStackTrace();
-        }
         try {
             System.out.println("Transforming+" + artifact);
             boolean verbose = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_VERBOSE, "false"));
