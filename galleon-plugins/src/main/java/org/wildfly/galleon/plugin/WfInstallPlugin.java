@@ -777,32 +777,31 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         }
     }
 
+
     private Path transform(MavenArtifact artifact, Path targetDir) throws IOException {
-        dev.hargrave.transformer.App t = new dev.hargrave.transformer.App();
-        if (artifact.getArtifactId().equals("aesh-extensions")) {
-            new Exception().printStackTrace();
-        }
-        try {
-            System.out.println("Transforming+" + artifact);
-            boolean verbose = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_VERBOSE, "false"));
-            String rules = runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_RULES_URL);
-            List<String> args = new ArrayList<>();
-            if (verbose) {
-                args.add("-v");
-            }
-            if (rules != null) {
-                args.add("--rules");
-                args.add(rules);
-            }
-            args.add("--jar");
-            args.add(artifact.getPath().toString());
-            args.add("--output");
-            args.add(targetDir.resolve(artifact.getPath().getFileName()).toString());
-            String[] array = new String[args.size()];
-            t.run(args.toArray(array));
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        }
+        System.out.println("Transforming+" + artifact);
+        Common.transformJarFile(artifact.getPath().toFile(), targetDir.resolve(artifact.getPath().getFileName()).toFile());
+//        try {
+//            System.out.println("Transforming+" + artifact);
+//            boolean verbose = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_VERBOSE, "false"));
+//            String rules = runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_RULES_URL);
+//            List<String> args = new ArrayList<>();
+//            if (verbose) {
+//                args.add("-v");
+//            }
+//            if (rules != null) {
+//                args.add("--rules");
+//                args.add(rules);
+//            }
+//            args.add("--jar");
+//            args.add(artifact.getPath().toString());
+//            args.add("--output");
+//            args.add(targetDir.resolve(artifact.getPath().getFileName()).toString());
+//            String[] array = new String[args.size()];
+//            t.run(args.toArray(array));
+//        } catch (Exception ex) {
+//            throw new RuntimeException(ex);
+//        }
         return targetDir.resolve(artifact.getPath().getFileName());
     }
 

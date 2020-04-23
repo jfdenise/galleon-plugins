@@ -39,9 +39,14 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>dev.hargrave.transformer</groupId>
-      <artifactId>transformer</artifactId>
-      <version>1.0</version>
+      <groupId>org.wildfly-extras</groupId>
+      <artifactId>transformer-api</artifactId>
+      <version>1.0.0.Alpha1-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>org.wildfly-extras</groupId>
+      <artifactId>asm-based-transformer</artifactId>
+      <version>1.0.0.Alpha1-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.jboss</groupId>
