@@ -45,7 +45,7 @@
     </dependency>
     <dependency>
       <groupId>org.wildfly-extras</groupId>
-      <artifactId>asm-based-transformer</artifactId>
+      <artifactId>no-dependencies-transformer</artifactId>
       <version>1.0.0.Alpha1-SNAPSHOT</version>
     </dependency>
     <dependency>

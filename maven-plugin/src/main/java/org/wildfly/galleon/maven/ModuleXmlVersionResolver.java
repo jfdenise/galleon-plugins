@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
+import javax.xml.namespace.QName;
 
 import javax.xml.stream.XMLEventFactory;
 import javax.xml.stream.XMLEventReader;
@@ -45,6 +46,7 @@ import javax.xml.stream.events.XMLEvent;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
 import org.wildfly.galleon.plugin.ArtifactCoords;
 
@@ -66,16 +68,16 @@ public class ModuleXmlVersionResolver {
         return XML_INPUT_FACTORY == null ? XML_INPUT_FACTORY = XMLInputFactory.newInstance() : XML_INPUT_FACTORY;
     }
 
-    public static void convertModule(final Path file, Path target, Map<String, Artifact> artifacts, List<Artifact> hardcodedArtifacts, Log log) throws IOException, XMLStreamException {
+    public static void convertModule(FeatureSpecGeneratorInvoker gen, final Path file, Path target, Map<String, Artifact> artifacts, List<Artifact> hardcodedArtifacts, Log log) throws IOException, XMLStreamException {
         Files.deleteIfExists(target);
         Files.createDirectories(target.getParent());
         try (Reader is = Files.newBufferedReader(file, Charsets.UTF_8);
                 Writer out = Files.newBufferedWriter(target, Charsets.UTF_8, StandardOpenOption.CREATE_NEW)) {
-            convert(getXmlInputFactory().createXMLEventReader(is), getXmlOutputFactory().createXMLEventWriter(out), artifacts, hardcodedArtifacts, log);
+            convert(target.getParent(), gen, getXmlInputFactory().createXMLEventReader(is), getXmlOutputFactory().createXMLEventWriter(out), artifacts, hardcodedArtifacts, log);
         }
     }
 
-    private static void convert(final XMLEventReader r, final XMLEventWriter w, Map<String, Artifact> artifacts, List<Artifact> hardcodedArtifacts, Log log) throws IOException, XMLStreamException {
+    private static void convert(Path dir, FeatureSpecGeneratorInvoker gen, final XMLEventReader r, final XMLEventWriter w, Map<String, Artifact> artifacts, List<Artifact> hardcodedArtifacts, Log log) throws IOException, XMLStreamException {
         XMLEventFactory eventFactory = XMLEventFactory.newInstance();
         while (r.hasNext()) {
             XMLEvent event = r.nextEvent();
@@ -87,7 +89,7 @@ public class ModuleXmlVersionResolver {
                         log.debug(startElement + " has been converted to " + convertedModule);
                         w.add(convertedModule);
                     } else if ("artifact".equals(startElement.getName().getLocalPart())) {
-                        StartElement convertedArtifact = convertArtifactElement(eventFactory, startElement, artifacts, hardcodedArtifacts, log);
+                        StartElement convertedArtifact = convertArtifactElement(dir, gen, eventFactory, startElement, artifacts, hardcodedArtifacts, log);
                         log.debug(startElement + " has been converted to " + convertedArtifact);
                         w.add(convertedArtifact);
                     } else {
@@ -111,7 +113,7 @@ public class ModuleXmlVersionResolver {
         w.close();
     }
 
-    private static StartElement convertArtifactElement(XMLEventFactory eventFactory, StartElement artifactElement, Map<String, Artifact> artifacts, List<Artifact> hardcodedArtifacts, Log log) {
+    private static StartElement convertArtifactElement(Path dir, FeatureSpecGeneratorInvoker gen, XMLEventFactory eventFactory, StartElement artifactElement, Map<String, Artifact> artifacts, List<Artifact> hardcodedArtifacts, Log log) {
         List<Attribute> attributes = new ArrayList<>();
         Iterator<?> iter = artifactElement.getAttributes();
         while (iter.hasNext()) {
@@ -132,7 +134,19 @@ public class ModuleXmlVersionResolver {
                         if (artifact.hasClassifier()) {
                             joiner.add(artifact.getClassifier());
                         }
-                        attributes.add(eventFactory.createAttribute(attribute.getName(), joiner.toString()));
+                        try {
+                            artifact = gen.findArtifact(artifact);
+                        } catch (MojoExecutionException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                        QName attrName = new QName(attribute.getName().getNamespaceURI(), "path", attribute.getName().getPrefix());
+                        // transform
+                        try {
+                            Common.transformJarFile(artifact.getFile(), dir.resolve(artifact.getFile().getName()).toFile());
+                        } catch (IOException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                        attributes.add(eventFactory.createAttribute(attrName, artifact.getFile().getName()));
                     }
                 } else {
                     attributes.add(attribute);
@@ -141,10 +155,11 @@ public class ModuleXmlVersionResolver {
                             "provided", coords.getExtension(), coords.getClassifier(), new DefaultArtifactHandler(coords.getExtension())));
                 }
             } else {
-                attributes.add(attribute);
+                //attributes.add(attribute);
             }
         }
-        return eventFactory.createStartElement(artifactElement.getName(), attributes.iterator(), artifactElement.getNamespaces());
+        QName resource = new QName(artifactElement.getName().getNamespaceURI(), "resource-root", artifactElement.getName().getPrefix());
+        return eventFactory.createStartElement(resource, attributes.iterator(), artifactElement.getNamespaces());
     }
 
     private static StartElement convertModuleElement(XMLEventFactory eventFactory, StartElement module, Map<String, Artifact> artifacts) {

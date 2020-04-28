@@ -40,6 +40,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -74,6 +75,7 @@ import org.jboss.galleon.universe.UniverseFactoryLoader;
 import org.jboss.galleon.universe.UniverseResolver;
 import org.jboss.galleon.util.CollectionUtils;
 import org.jboss.galleon.util.IoUtils;
+import static org.wildfly.galleon.maven.Util.TO_TRANSFORM_PATH;
 import org.wildfly.galleon.plugin.ArtifactCoords;
 import org.wildfly.galleon.plugin.Utils;
 import org.wildfly.galleon.plugin.WfConstants;
@@ -217,7 +219,7 @@ public class FeatureSpecGeneratorInvoker {
 
         final Path projectModules = projectResources.resolve(MODULES);
         if(Files.exists(projectModules)) {
-            copyModules(projectModules, mergedArtifacts);
+            findTransformAndCopyModules(projectModules, mergedArtifacts);
         }
 
         if(!moduleTemplates.isEmpty()) {
@@ -225,7 +227,7 @@ public class FeatureSpecGeneratorInvoker {
             final Path targetModules = wildflyHome.resolve(MODULES);
             for(Map.Entry<String, Map<String, Artifact>> entry : moduleTemplates.entrySet()) {
                 try {
-                    ModuleXmlVersionResolver.convertModule(moduleTemplatesDir.resolve(entry.getKey()), targetModules.resolve(entry.getKey()), entry.getValue(), hardcodedArtifacts, log);
+                    ModuleXmlVersionResolver.convertModule(this, moduleTemplatesDir.resolve(entry.getKey()), targetModules.resolve(entry.getKey()), entry.getValue(), hardcodedArtifacts, log);
                 } catch (XMLStreamException e) {
                     throw new MojoExecutionException("Failed to process " + moduleTemplatesDir.resolve(entry.getKey()), e);
                 }
@@ -575,7 +577,7 @@ public class FeatureSpecGeneratorInvoker {
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
                 if (dir.endsWith(MODULE_PATH_SEGMENT)) {
                     debug("Copying %s to %s", dir, moduleTemplatesDir);
-                    copyModules(dir, fpArtifacts);
+                    findTransformAndCopyModules(dir, fpArtifacts);
                     return FileVisitResult.SKIP_SUBTREE;
                 }
                 return FileVisitResult.CONTINUE;
@@ -646,6 +648,54 @@ public class FeatureSpecGeneratorInvoker {
                 });
     }
 
+    private void findTransformAndCopyModules(final Path source, Map<String, Artifact> fpArtifacts) throws IOException {
+        Set<Path> mods = new HashSet<>();
+        Files.walkFileTree(source, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE,
+                new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs)
+                    throws IOException {
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                    throws IOException {
+
+                mods.add(source.relativize(file));
+
+                return FileVisitResult.CONTINUE;
+            }
+        });
+
+        Iterator<Path> it = mods.iterator();
+        while (it.hasNext()) {
+            Path p = it.next();
+            Path file = source.resolve(p);
+            String newModuleName = null;
+            for (Path ts : TO_TRANSFORM_PATH) {
+                if (p.toString().startsWith(ts.toString())) {
+                    p = Util.transformPath(p);
+                    newModuleName = "jakarta." + ts.subpath(4, ts.getNameCount()).toString().replaceAll("/", ".");
+                    break;
+                }
+            }
+
+            if (WfConstants.MODULE_XML.equals(p.getFileName().toString())) {
+                final Path targetDir = moduleTemplatesDir.resolve(p.toString());
+                moduleTemplates.put(p.toString(), fpArtifacts);
+                Files.createDirectories(targetDir.getParent());
+                // Transform names and dependencies
+                Util.rewriteModuleDescriptor(file, moduleTemplatesDir.resolve(p.toString()), newModuleName);
+                //Files.copy(file, moduleTemplatesDir.resolve(p), StandardCopyOption.REPLACE_EXISTING);
+            } else {
+                final Path target = wildflyHome.resolve(MODULES).resolve(p.toString());
+                Files.createDirectories(target.getParent());
+                Files.copy(file, target);
+            }
+        }
+    }
+
     private void processPackageTasks(Path file, Map<String, Artifact> artifacts) throws IOException {
         if(tasksParser == null) {
             tasksParser = new WildFlyPackageTasksParser();
@@ -679,7 +729,7 @@ public class FeatureSpecGeneratorInvoker {
         }
     }
 
-    private Artifact findArtifact(Artifact artifact) throws MojoExecutionException {
+    Artifact findArtifact(Artifact artifact) throws MojoExecutionException {
         try {
             ProjectBuildingRequest buildingRequest
                     = new DefaultProjectBuildingRequest(session.getProjectBuildingRequest());

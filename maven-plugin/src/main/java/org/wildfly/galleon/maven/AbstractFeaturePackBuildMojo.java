@@ -87,6 +87,7 @@ import org.jboss.galleon.xml.PackageXmlParser;
 import org.jboss.galleon.xml.PackageXmlWriter;
 import static org.wildfly.galleon.maven.FeatureSpecGeneratorInvoker.MODULE_PATH_SEGMENT;
 import static org.wildfly.galleon.maven.Util.mkdirs;
+import static org.wildfly.galleon.maven.Util.transformPath;
 import org.wildfly.galleon.maven.build.tasks.ResourcesTask;
 import org.wildfly.galleon.plugin.ArtifactCoords;
 import org.wildfly.galleon.plugin.WfConstants;
@@ -581,13 +582,21 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             throws IOException, MojoExecutionException {
 
         for (Map.Entry<String, Path> module : moduleXmlByPkgName.entrySet()) {
-            final String packageName = module.getKey();
+            String packageName = module.getKey();
             final Path moduleXml = module.getValue();
 
+            boolean transform = packageName.startsWith("jakarta.");
+
+            Path finalpath = resourcesDir.relativize(moduleXml);
+
+            if (transform) {
+                finalpath = transformPath(finalpath);
+            }
             final Path packageDir = getPackagesDir().resolve(packageName);
-            final Path targetXml = packageDir.resolve(WfConstants.PM).resolve(WfConstants.WILDFLY).resolve(WfConstants.MODULE).resolve(resourcesDir.relativize(moduleXml));
+            final Path targetXml = packageDir.resolve(WfConstants.PM).resolve(WfConstants.WILDFLY).resolve(WfConstants.MODULE).resolve(finalpath);
             mkdirs(targetXml.getParent());
             IoUtils.copy(moduleXml.getParent(), targetXml.getParent());
+            Util.rewriteModuleDescriptor(moduleXml, targetXml, transform ? packageName : null);
 
             final PackageSpec.Builder pkgSpecBuilder = PackageSpec.builder(packageName);
             final ModuleParseResult parsedModule;
