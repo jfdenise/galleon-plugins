@@ -33,10 +33,10 @@ public abstract class Common {
             throw new UnsupportedOperationException("File " + inClassFile.getAbsolutePath() + " too big! Maximum allowed file size is " + Integer.MAX_VALUE + " bytes");
         }
 
-        final org.wildfly.transformer.Transformer t = org.wildfly.transformer.TransformerFactory.getInstance().newTransformer();
+        final org.wildfly.transformer.TransformerBuilder t = org.wildfly.transformer.TransformerFactory.getInstance().newTransformer();
         byte[] clazz = new byte[(int) inClassFile.length()];
         readBytes(new FileInputStream(inClassFile), clazz, true);
-        final Transformer.Resource newResource = t.transform(new Transformer.Resource(inClassFile.getName(), clazz));
+        final Transformer.Resource newResource = t.build().transform(new Transformer.Resource(inClassFile.getName(), clazz));
         clazz = newResource != null ? newResource.getData() : clazz;
         writeBytes(new FileOutputStream(outClassFile), clazz, true);
     }
@@ -75,14 +75,14 @@ public abstract class Common {
     }
 
     protected static void transformJarFile(final File inJarFile, final File outJarFile) throws IOException {
-        final org.wildfly.transformer.Transformer t = org.wildfly.transformer.TransformerFactory.getInstance().newTransformer();
+        final org.wildfly.transformer.TransformerBuilder t = org.wildfly.transformer.TransformerFactory.getInstance().newTransformer();
         final Calendar calendar = Calendar.getInstance();
         JarFile jar = null;
         JarOutputStream jarOutputStream = null;
         JarEntry inJarEntry, outJarEntry;
         byte[] buffer;
         Transformer.Resource oldResource, newResource;
-
+        final org.wildfly.transformer.Transformer transformer = t.build();
         try {
             jar = new JarFile(inJarFile);
             jarOutputStream = new JarOutputStream(new FileOutputStream(outJarFile));
@@ -104,7 +104,7 @@ public abstract class Common {
                 readBytes(jar.getInputStream(inJarEntry), buffer, true);
                 oldResource = new Transformer.Resource(inJarEntry.getName(), buffer);
                 // transform resource
-                newResource = t.transform(oldResource);
+                newResource = transformer.transform(oldResource);
                 if (newResource == null) {
                     newResource = oldResource;
                 }
