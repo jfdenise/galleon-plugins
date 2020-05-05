@@ -291,7 +291,16 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             provisionExampleConfigs();
         }
 
-        if(startTime > 0) {
+        boolean transform = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA, "false"));
+        if (transform) {
+            Path p = runtime.getStagedDir();
+            try {
+                JBossModuleTransformer.transform(p.resolve("modules"));
+            } catch (IOException e) {
+                throw new ProvisioningException(e);
+            }
+        }
+        if (startTime > 0) {
             log.print(Errors.tookTime("Overall WildFly Galleon Plugin", startTime));
         }
     }
