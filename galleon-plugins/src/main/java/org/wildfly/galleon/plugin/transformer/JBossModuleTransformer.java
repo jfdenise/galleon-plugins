@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.wildfly.galleon.plugin;
+package org.wildfly.galleon.plugin.transformer;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -43,12 +43,13 @@ import nu.xom.Elements;
 import nu.xom.ParsingException;
 import nu.xom.Serializer;
 import org.jboss.galleon.util.IoUtils;
+import org.wildfly.galleon.plugin.WfConstants;
 
 /**
  *
  * @author jdenise
  */
-public final class JBossModuleTransformer {
+final class JBossModuleTransformer {
 
     static final Map<String, String> MAPPING = new HashMap<>();
     static final Map<String, String> NAME_MAPPING = new HashMap<>();

@@ -3,15 +3,15 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package org.wildfly.galleon.plugin;
+package org.wildfly.galleon.plugin.transformer;
 
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Path;
 import java.util.Calendar;
 import java.util.Enumeration;
 import java.util.jar.JarEntry;
@@ -23,25 +23,12 @@ import org.wildfly.transformer.Transformer;
  *
  * @author jdenise
  */
-public abstract class Common {
+public abstract class JakartaTransformer {
 
-    protected static final String CLASS_FILE_EXT = ".class";
-    protected static final String JAR_FILE_EXT = ".jar";
+    public static final String TRANSFORM_ARTIFACTS = "jakarta.transform.artifacts";
+    public static final String TRANSFORM_MODULES = "jakarta.transform.modules";
 
-    protected static void transformClassFile(final File inClassFile, final File outClassFile) throws IOException {
-        if (inClassFile.length() > Integer.MAX_VALUE) {
-            throw new UnsupportedOperationException("File " + inClassFile.getAbsolutePath() + " too big! Maximum allowed file size is " + Integer.MAX_VALUE + " bytes");
-        }
-
-        final org.wildfly.transformer.TransformerBuilder t = org.wildfly.transformer.TransformerFactory.getInstance().newTransformer();
-        byte[] clazz = new byte[(int) inClassFile.length()];
-        readBytes(new FileInputStream(inClassFile), clazz, true);
-        final Transformer.Resource newResource = t.build().transform(new Transformer.Resource(inClassFile.getName(), clazz));
-        clazz = newResource != null ? newResource.getData() : clazz;
-        writeBytes(new FileOutputStream(outClassFile), clazz, true);
-    }
-
-    protected static void safeClose(final Closeable c) {
+    private static void safeClose(final Closeable c) {
         try {
             if (c != null) {
                 c.close();
@@ -51,7 +38,7 @@ public abstract class Common {
         }
     }
 
-    protected static void readBytes(final InputStream is, final byte[] clazz, final boolean closeStream) throws IOException {
+    private static void readBytes(final InputStream is, final byte[] clazz, final boolean closeStream) throws IOException {
         try {
             int offset = 0;
             while (offset < clazz.length) {
@@ -64,7 +51,7 @@ public abstract class Common {
         }
     }
 
-    protected static void writeBytes(final OutputStream os, final byte[] clazz, final boolean closeStream) throws IOException {
+    private static void writeBytes(final OutputStream os, final byte[] clazz, final boolean closeStream) throws IOException {
         try {
             os.write(clazz);
         } finally {
@@ -74,7 +61,7 @@ public abstract class Common {
         }
     }
 
-    protected static void transformJarFile(final File inJarFile, final File outJarFile) throws IOException {
+    public static void transformJarFile(final File inJarFile, final File outJarFile) throws IOException {
         final org.wildfly.transformer.TransformerBuilder t = org.wildfly.transformer.TransformerFactory.getInstance().newTransformer();
         final Calendar calendar = Calendar.getInstance();
         JarFile jar = null;
@@ -120,5 +107,9 @@ public abstract class Common {
             safeClose(jar);
             safeClose(jarOutputStream);
         }
+    }
+
+    public static void transformModules(Path modules) throws IOException {
+        JBossModuleTransformer.transform(modules);
     }
 }

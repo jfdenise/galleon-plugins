@@ -16,7 +16,6 @@
  */
 package org.wildfly.galleon.plugin;
 
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -101,6 +100,7 @@ import org.wildfly.galleon.plugin.config.ExampleFpConfigs;
 import org.wildfly.galleon.plugin.config.FileFilter;
 import org.wildfly.galleon.plugin.config.XslTransform;
 import org.wildfly.galleon.plugin.server.CliScriptRunner;
+import org.wildfly.galleon.plugin.transformer.JakartaTransformer;
 
 /**
  *
@@ -120,17 +120,6 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             .setBooleanValueSet()
             .build();
     private static final ProvisioningOption OPTION_MVN_REPO = ProvisioningOption.builder("jboss-maven-repo")
-            .setPersistent(false)
-            .build();
-    private static final ProvisioningOption OPTION_TRANSFORM_JAKARTA = ProvisioningOption.builder("jboss-jakarta-transform")
-            .setPersistent(false)
-            .setBooleanValueSet()
-            .build();
-    private static final ProvisioningOption OPTION_TRANSFORM_JAKARTA_VERBOSE = ProvisioningOption.builder("jboss-jakarta-transform-verbose")
-            .setPersistent(false)
-            .setBooleanValueSet()
-            .build();
-    private static final ProvisioningOption OPTION_TRANSFORM_JAKARTA_RULES_URL = ProvisioningOption.builder("jboss-jakarta-transform-rules")
             .setPersistent(false)
             .build();
     private ProvisioningRuntime runtime;
@@ -163,7 +152,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     @Override
     protected List<ProvisioningOption> initPluginOptions() {
         return Arrays.asList(OPTION_MVN_DIST, OPTION_DUMP_CONFIG_SCRIPTS, OPTION_FORK_EMBEDDED,
-                OPTION_MVN_REPO, OPTION_TRANSFORM_JAKARTA, OPTION_TRANSFORM_JAKARTA_RULES_URL, OPTION_TRANSFORM_JAKARTA_VERBOSE);
+                OPTION_MVN_REPO);
     }
 
     public ProvisioningRuntime getRuntime() {
@@ -291,11 +280,10 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             provisionExampleConfigs();
         }
 
-        boolean transform = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA, "false"));
-        if (transform) {
-            Path p = runtime.getStagedDir();
+        String transform = mergedTaskProps.getOrDefault(JakartaTransformer.TRANSFORM_MODULES, "false");
+        if (Boolean.valueOf(transform)) {
             try {
-                JBossModuleTransformer.transform(p.resolve("modules"));
+                JakartaTransformer.transformModules(runtime.getStagedDir().resolve("modules"));
             } catch (IOException e) {
                 throw new ProvisioningException(e);
             }
@@ -710,7 +698,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     throw new IOException("Failed to resolve artifact " + artifact, e);
                 }
                 moduleArtifact = artifact.getPath();
-                boolean transform = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA, "false"));
+                boolean transform = Boolean.valueOf(mergedTaskProps.getOrDefault(JakartaTransformer.TRANSFORM_ARTIFACTS, "false"));
                 if (transform) {
                     moduleArtifact = transform(artifact, targetPath.getParent());
                 }
@@ -789,28 +777,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     private Path transform(MavenArtifact artifact, Path targetDir) throws IOException {
         System.out.println("Transforming+" + artifact);
-        Common.transformJarFile(artifact.getPath().toFile(), targetDir.resolve(artifact.getPath().getFileName()).toFile());
-//        try {
-//            System.out.println("Transforming+" + artifact);
-//            boolean verbose = Boolean.valueOf(runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_VERBOSE, "false"));
-//            String rules = runtime.getOptionValue(OPTION_TRANSFORM_JAKARTA_RULES_URL);
-//            List<String> args = new ArrayList<>();
-//            if (verbose) {
-//                args.add("-v");
-//            }
-//            if (rules != null) {
-//                args.add("--rules");
-//                args.add(rules);
-//            }
-//            args.add("--jar");
-//            args.add(artifact.getPath().toString());
-//            args.add("--output");
-//            args.add(targetDir.resolve(artifact.getPath().getFileName()).toString());
-//            String[] array = new String[args.size()];
-//            t.run(args.toArray(array));
-//        } catch (Exception ex) {
-//            throw new RuntimeException(ex);
-//        }
+        JakartaTransformer.transformJarFile(artifact.getPath().toFile(), targetDir.resolve(artifact.getPath().getFileName()).toFile());
         return targetDir.resolve(artifact.getPath().getFileName());
     }
 
