@@ -40,7 +40,7 @@
     </dependency>
     <dependency>
       <groupId>org.wildfly-extras</groupId>
-      <artifactId>transformer-api</artifactId>
+      <artifactId>transformer-tools-api</artifactId>
       <version>1.0.0.Alpha1-SNAPSHOT</version>
     </dependency>
     <dependency>

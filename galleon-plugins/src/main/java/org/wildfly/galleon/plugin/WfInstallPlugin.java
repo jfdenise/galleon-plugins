@@ -282,8 +282,14 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
         String transform = mergedTaskProps.getOrDefault(JakartaTransformer.TRANSFORM_MODULES, "false");
         if (Boolean.valueOf(transform)) {
+            log.print("Transforming JBoss modules");
             try {
-                JakartaTransformer.transformModules(runtime.getStagedDir().resolve("modules"));
+                Path srcModules = runtime.getStagedDir().resolve("modules");
+                Path targetModules = runtime.getStagedDir().resolve("transformed-modules");
+                Files.createDirectory(targetModules);
+                JakartaTransformer.transformModules(srcModules, targetModules);
+                IoUtils.recursiveDelete(srcModules);
+                Files.move(targetModules, srcModules);
             } catch (IOException e) {
                 throw new ProvisioningException(e);
             }
