@@ -705,9 +705,6 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 }
                 moduleArtifact = artifact.getPath();
                 boolean transform = Boolean.valueOf(mergedTaskProps.getOrDefault(JakartaTransformer.TRANSFORM_ARTIFACTS, "false"));
-                if (transform) {
-                    moduleArtifact = transform(artifact, targetPath.getParent());
-                }
                 if (thinServer) {
                     // ignore jandex variable, just resolve coordinates to a string
                     final StringBuilder buf = new StringBuilder();
@@ -736,7 +733,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                         Path artifactidPath = grpidPath.resolve(artifact.getArtifactId());
                         Path versionPath = artifactidPath.resolve(artifact.getVersion());
                         Files.createDirectories(versionPath);
-                        Files.copy(moduleArtifact, versionPath.resolve(moduleArtifact.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
+                        if (transform) {
+                            transform(artifact, versionPath);
+                        } else {
+                            Files.copy(moduleArtifact, versionPath.resolve(moduleArtifact.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
+                        }
                         Files.copy(pomFile, versionPath.resolve(pomFile.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
                     }
                 } else {
@@ -753,7 +754,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                         finalFileName = target.getName();
                     } else {
                         finalFileName = artifactFileName;
-                        if (!transform) {
+                        if (transform) {
+                            transform(artifact, targetPath.getParent());
+                        } else {
                             Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
                         }
                     }
