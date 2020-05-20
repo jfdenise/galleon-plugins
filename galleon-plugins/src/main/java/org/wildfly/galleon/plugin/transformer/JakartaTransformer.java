@@ -24,7 +24,7 @@ public class JakartaTransformer {
         ToolUtils.transformModules(modules, targetModules, null, false, null);
     }
 
-    public static void transformJarFile(final File inJarFile, final File outJarFile) throws IOException {
-        ToolUtils.transformJarFile(inJarFile, outJarFile, null);
+    public static void transformJarFile(final File inJarFile, final File outputFolder) throws IOException {
+        ToolUtils.transformJarFile(inJarFile, outputFolder, null);
     }
 }
