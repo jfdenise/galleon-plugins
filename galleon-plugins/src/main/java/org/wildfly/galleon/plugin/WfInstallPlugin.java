@@ -786,7 +786,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     private Path transform(MavenArtifact artifact, Path targetDir) throws IOException {
         System.out.println("Transforming+" + artifact);
-        JakartaTransformer.transformJarFile(artifact.getPath().toFile(), targetDir.resolve(artifact.getPath().getFileName()).toFile());
+        JakartaTransformer.transformJarFile(artifact.getPath().toFile(), targetDir.toFile());
         return targetDir.resolve(artifact.getPath().getFileName());
     }
 
