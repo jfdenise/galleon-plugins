@@ -51,6 +51,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -137,10 +138,12 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private static final ProvisioningOption OPTION_JAKARTA_TRANSFORM_ARTIFACTS_VERBOSE = ProvisioningOption.builder("jboss-jakarta-transform-artifacts-verbose")
             .setBooleanValueSet()
             .build();
+    private static final ProvisioningOption OPTION_OVERRIDEN_ARTIFACTS = ProvisioningOption.builder("jboss-overriden-artifacts").setPersistent(true).build();
     private ProvisioningRuntime runtime;
     private MessageWriter log;
 
     private Map<String, String> mergedArtifactVersions = new HashMap<>();
+    private final Map<String, String> overridenArtifactVersions = new HashMap<>();
     private Map<ProducerSpec, Map<String, String>> fpArtifactVersions = new HashMap<>();
     private Map<ProducerSpec, Map<String, String>> fpTasksProps = Collections.emptyMap();
     private Map<String, String> mergedTaskProps = new HashMap<>();
@@ -181,7 +184,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     protected List<ProvisioningOption> initPluginOptions() {
         return Arrays.asList(OPTION_MVN_DIST, OPTION_DUMP_CONFIG_SCRIPTS,
                 OPTION_FORK_EMBEDDED, OPTION_MVN_REPO, OPTION_JAKARTA_TRANSFORM_ARTIFACTS,
-                OPTION_MVN_PROVISIONING_REPO, OPTION_JAKARTA_TRANSFORM_ARTIFACTS_VERBOSE);
+                OPTION_MVN_PROVISIONING_REPO, OPTION_JAKARTA_TRANSFORM_ARTIFACTS_VERBOSE, OPTION_OVERRIDEN_ARTIFACTS);
     }
 
     public ProvisioningRuntime getRuntime() {
@@ -202,6 +205,14 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         }
         final String value = runtime.getOptionValue(OPTION_MVN_PROVISIONING_REPO);
         return value == null ? null : Paths.get(value);
+    }
+
+    private Map<String, String> getOverridenArtifacts() throws ProvisioningException {
+        if (!runtime.isOptionSet(OPTION_OVERRIDEN_ARTIFACTS)) {
+            return Collections.emptyMap();
+        }
+        final String value = runtime.getOptionValue(OPTION_OVERRIDEN_ARTIFACTS);
+        return value == null ? Collections.emptyMap() : Utils.toArtifactsMap(value);
     }
 
     private boolean isTransformationEnabled() throws ProvisioningException {
@@ -247,7 +258,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         thinServer = isThinServer();
         maven = (MavenRepoManager) runtime.getArtifactResolver(MavenRepoManager.REPOSITORY_ID);
         provisioningMavenRepo = getProvisioningMavenRepo();
-
+        // Overriden artifacts
+        overridenArtifactVersions.putAll(getOverridenArtifacts());
+        System.out.println("MAP " + overridenArtifactVersions);
         if (provisioningMavenRepo != null && Files.notExists(provisioningMavenRepo)) {
             throw new ProvisioningException("Local maven repository " + provisioningMavenRepo.toAbsolutePath().toString()
                     + " used to provision the server doesn't exist.");
@@ -261,6 +274,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             final Path artifactProps = wfRes.resolve(WfConstants.ARTIFACT_VERSIONS_PROPS);
             if(Files.exists(artifactProps)) {
                 final Map<String, String> versionProps = Utils.readProperties(artifactProps);
+                for (Entry<String, String> entry : overridenArtifactVersions.entrySet()) {
+                    if (versionProps.containsKey(entry.getKey())) {
+                        versionProps.put(entry.getKey(), entry.getValue());
+                    }
+                }
                 fpArtifactVersions.put(fp.getFPID().getProducer(), versionProps);
                 mergedArtifactVersions.putAll(versionProps);
             }
@@ -298,6 +316,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 }
             }
         }
+        mergedArtifactVersions.putAll(overridenArtifactVersions);
         mergedTaskPropsResolver = new MapPropertyResolver(mergedTaskProps);
 
         final ProvisioningLayoutFactory layoutFactory = runtime.getLayout().getFactory();

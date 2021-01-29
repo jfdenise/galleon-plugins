@@ -224,4 +224,26 @@ public class Utils {
             }
         }
     }
+
+    static Map<String, String> toArtifactsMap(String str) {
+        if (str == null) {
+            return Collections.emptyMap();
+        }
+        String[] split = str.split("\\|");
+        Map<String, String> ret = new HashMap<>();
+        for (String artifact : split) {
+            //org.wildfly.core:wildfly-cli:14.0.0.Final::jar
+            String[] parts = artifact.split(":");
+            if (parts.length != 5) {
+                throw new IllegalArgumentException("Unexpected artifact coordinates format: " + artifact);
+            }
+            //org.wildfly.core:wildfly-cli::client
+            String key = parts[0] + ":" + parts[1];
+            if (parts[3] != null && !parts[3].isEmpty()) {
+                key = key + ":" + parts[3];
+            }
+            ret.put(key, artifact);
+        }
+        return ret;
+    }
 }
