@@ -237,10 +237,10 @@ public class Utils {
             if (parts.length != 5) {
                 throw new IllegalArgumentException("Unexpected artifact coordinates format: " + artifact);
             }
-            //org.wildfly.core:wildfly-cli::client
+            //org.wildfly.core:wildfly-cli:14.0.0.Final:client:jar
             String key = parts[0] + ":" + parts[1];
             if (parts[3] != null && !parts[3].isEmpty()) {
-                key = key + ":" + parts[3];
+                key = key + "::" + parts[3];
             }
             ret.put(key, artifact);
         }

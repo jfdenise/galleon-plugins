@@ -260,7 +260,6 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         provisioningMavenRepo = getProvisioningMavenRepo();
         // Overriden artifacts
         overridenArtifactVersions.putAll(getOverridenArtifacts());
-        System.out.println("MAP " + overridenArtifactVersions);
         if (provisioningMavenRepo != null && Files.notExists(provisioningMavenRepo)) {
             throw new ProvisioningException("Local maven repository " + provisioningMavenRepo.toAbsolutePath().toString()
                     + " used to provision the server doesn't exist.");
@@ -314,6 +313,12 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 } catch (IOException e) {
                     throw new ProvisioningException(Errors.readFile(excludedArtifacts), e);
                 }
+            }
+        }
+        // Check that all overriden artifacts are actually known.
+        for (String key : overridenArtifactVersions.keySet()) {
+            if (!mergedArtifactVersions.containsKey(key)) {
+                throw new ProvisioningException("Overriden artifacts " + key + " is not found in the set of known server artifacts");
             }
         }
         mergedArtifactVersions.putAll(overridenArtifactVersions);
