@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -233,14 +234,32 @@ public class Utils {
         String[] split = str.split("\\|");
         for (String artifact : split) {
             //org.wildfly.core:wildfly-cli:14.0.0.Final::jar:<absolute file path>
-            String[] parts = artifact.split(":");
-            if (parts.length < 5 && parts.length != 6) {
+            List<String> elements = new ArrayList<>();
+            StringBuilder current = new StringBuilder();
+            boolean inFilePath = false;
+            for (char s : artifact.toCharArray()) {
+                if (':' == s) {
+                    // Windows File path ':' character handling.
+                    if (!inFilePath) {
+                        String elem = current.toString();
+                        elements.add(elem);
+                        current = new StringBuilder();
+                        inFilePath = elements.size() == 5;
+                    } else {
+                        current.append(s);
+                    }
+                } else {
+                    current.append(s);
+                }
+            }
+            elements.add(current.toString());
+            if (elements.size() < 5 && elements.size() != 6) {
                 throw new IllegalArgumentException("Unexpected artifact coordinates format: " + artifact);
             }
             //org.wildfly.core:wildfly-cli:14.0.0.Final:client:jar
-            String key = getArtifactKey(parts[0], parts[1], parts[3]);
-            if (parts.length > 5) {
-                Path p = Paths.get(parts[5]);
+            String key = getArtifactKey(elements.get(0), elements.get(1), elements.get(3));
+            if (elements.size() > 5) {
+                Path p = Paths.get(elements.get(5));
                 if (!Files.exists(p)) {
                     throw new ProvisioningException("Artifact path " + p + "doesn't exist.");
                 }
