@@ -27,6 +27,7 @@ import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
@@ -225,25 +226,38 @@ public class Utils {
         }
     }
 
-    static Map<String, String> toArtifactsMap(String str) {
+    static void populateOverridenArtifacts(String str, Map<String, String> overridenArtifacts, Map<String, Path> localOverriden) throws ProvisioningException {
         if (str == null) {
-            return Collections.emptyMap();
+            return;
         }
         String[] split = str.split("\\|");
-        Map<String, String> ret = new HashMap<>();
         for (String artifact : split) {
-            //org.wildfly.core:wildfly-cli:14.0.0.Final::jar
+            //org.wildfly.core:wildfly-cli:14.0.0.Final::jar:<absolute file path>
             String[] parts = artifact.split(":");
-            if (parts.length != 5) {
+            if (parts.length < 5 && parts.length != 6) {
                 throw new IllegalArgumentException("Unexpected artifact coordinates format: " + artifact);
             }
             //org.wildfly.core:wildfly-cli:14.0.0.Final:client:jar
-            String key = parts[0] + ":" + parts[1];
-            if (parts[3] != null && !parts[3].isEmpty()) {
-                key = key + "::" + parts[3];
+            String key = getArtifactKey(parts[0], parts[1], parts[3]);
+            if (parts.length > 5) {
+                Path p = Paths.get(parts[5]);
+                if (!Files.exists(p)) {
+                    throw new ProvisioningException("Artifact path " + p + "doesn't exist.");
+                }
+                localOverriden.put(key, p);
+            } else {
+                overridenArtifacts.put(key, artifact);
             }
-            ret.put(key, artifact);
         }
-        return ret;
     }
+
+    static String getArtifactKey(String groupId, String artifactId, String classifier) {
+        //org.wildfly.core:wildfly-cli:14.0.0.Final:client:jar
+        String key = groupId + ":" + artifactId;
+        if (classifier != null && !classifier.isEmpty()) {
+            key = key + "::" + classifier;
+        }
+        return key;
+    }
+
 }
