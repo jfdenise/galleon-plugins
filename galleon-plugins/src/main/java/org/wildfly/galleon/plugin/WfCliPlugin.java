@@ -16,9 +16,8 @@
  */
 package org.wildfly.galleon.plugin;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
 import java.nio.file.FileVisitResult;
 import static java.nio.file.FileVisitResult.CONTINUE;
 import java.nio.file.Files;
@@ -31,17 +30,19 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-import nu.xom.Attribute;
-import nu.xom.Builder;
-import nu.xom.Document;
-import nu.xom.Element;
-import nu.xom.Elements;
-import nu.xom.ParsingException;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import org.jboss.galleon.ProvisioningDescriptionException;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.plugin.CliPlugin;
 import org.jboss.galleon.runtime.PackageRuntime;
 import org.jboss.galleon.spec.PackageSpec;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 /**
  *
@@ -61,12 +62,9 @@ public class WfCliPlugin implements CliPlugin {
             Map<String, String> variables = getVariables(props);
             List<String> artifacts = new ArrayList<>();
             String moduleVersion;
-            try {
-                moduleVersion = parseModuleDescriptor(variables, pkg.getContentDir(),
-                        pkg.getSpec(), artifacts);
-            } catch (ParsingException ex) {
-                throw new ProvisioningException(ex);
-            }
+            moduleVersion = parseModuleDescriptor(variables, pkg.getContentDir(),
+                    pkg.getSpec(), artifacts);
+
             return new ModuleContent(buildInfo(artifacts, moduleVersion));
         } else {
             return null;
@@ -88,7 +86,7 @@ public class WfCliPlugin implements CliPlugin {
     }
 
     private static String parseModuleDescriptor(Map<String, String> variables,
-            Path contentDir, PackageSpec spec, List<String> artifacts) throws IOException, ProvisioningException, ParsingException {
+            Path contentDir, PackageSpec spec, List<String> artifacts) throws IOException, ProvisioningException {
         Path modulePath = contentDir.getParent().resolve(MODULE_PATH);
         List<Path> moduleHolder = new ArrayList<>();
         String moduleVersion = null;
@@ -125,15 +123,23 @@ public class WfCliPlugin implements CliPlugin {
             throw new ProvisioningException("No module descriptor for " + spec.getName());
         }
         Path p = moduleHolder.get(0);
-        final Builder builder = new Builder(false);
         final Document document;
-        try (BufferedReader reader = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
-            document = builder.build(reader);
+        DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder documentBuilder;
+        try {
+            documentBuilder = documentBuilderFactory.newDocumentBuilder();
+        } catch (ParserConfigurationException ex) {
+            throw new IOException("Failed to parse document", ex);
         }
-        final Element rootElement = document.getRootElement();
-        final Attribute versionAttribute = rootElement.getAttribute("version");
-        if (versionAttribute != null) {
-            final String versionExpr = versionAttribute.getValue();
+        try (InputStream reader = Files.newInputStream(p)) {
+            document = documentBuilder.parse(reader);
+        } catch (SAXException e) {
+            throw new IOException("Failed to parse document", e);
+        }
+        final Element rootElement = document.getDocumentElement();
+        final String versionAttribute = rootElement.getAttribute("version");
+        if (versionAttribute != null && !versionAttribute.isEmpty()) {
+            final String versionExpr = versionAttribute;
             if (versionExpr.startsWith("${") && versionExpr.endsWith("}")) {
                 final String exprBody = versionExpr.substring(2, versionExpr.length() - 1);
                 final int optionsIndex = exprBody.indexOf('?');
@@ -153,26 +159,41 @@ public class WfCliPlugin implements CliPlugin {
                 }
             }
         }
-        final Element resourcesElement = rootElement.getFirstChildElement("resources", rootElement.getNamespaceURI());
-        if (resourcesElement != null) {
-            final Elements artfs = resourcesElement.getChildElements("artifact", rootElement.getNamespaceURI());
-            final int artifactCount = artfs.size();
-            for (int i = 0; i < artifactCount; i++) {
-                final Element element = artfs.get(i);
-                assert element.getLocalName().equals("artifact");
-                final Attribute attribute = element.getAttribute("name");
-                final String nameExpr = attribute.getValue();
-                if (nameExpr.startsWith("${") && nameExpr.endsWith("}")) {
-                    final String exprBody = nameExpr.substring(2, nameExpr.length() - 1);
-                    final int optionsIndex = exprBody.indexOf('?');
-                    final String artifactName;
-                    if (optionsIndex >= 0) {
-                        artifactName = exprBody.substring(0, optionsIndex);
-                    } else {
-                        artifactName = exprBody;
+        final NodeList resourcesElement = rootElement.getElementsByTagNameNS("resources", rootElement.getNamespaceURI());
+        Element resources = null;
+        if (resourcesElement != null && resourcesElement.getLength() > 0) {
+            for (int i = 0; i < resourcesElement.getLength(); i++) {
+                Node n = resourcesElement.item(i);
+                if (n instanceof Element) {
+                    if ("resources".equals(n.getNodeName())) {
+                        resources = (Element) n;
                     }
-                    final String resolved = variables.get(artifactName);
-                    artifacts.add(resolved);
+                }
+            }
+        }
+        if (resources != null) {
+            final NodeList artifactsList = resources.getChildNodes();
+            for (int i = 0; i < artifactsList.getLength(); i++) {
+                final Node n = artifactsList.item(i);
+                if (n instanceof Element) {
+                    if ("artifact".equals(n.getNodeName())) {
+                        final Element element = (Element) n;
+                        assert element.getLocalName().equals("artifact");
+                        assert element.getLocalName().equals("artifact");
+                        final String nameExpr = element.getAttribute("name");
+                        if (nameExpr != null && nameExpr.startsWith("${") && nameExpr.endsWith("}")) {
+                            final String exprBody = nameExpr.substring(2, nameExpr.length() - 1);
+                            final int optionsIndex = exprBody.indexOf('?');
+                            final String artifactName;
+                            if (optionsIndex >= 0) {
+                                artifactName = exprBody.substring(0, optionsIndex);
+                            } else {
+                                artifactName = exprBody;
+                            }
+                            final String resolved = variables.get(artifactName);
+                            artifacts.add(resolved);
+                        }
+                    }
                 }
             }
         }

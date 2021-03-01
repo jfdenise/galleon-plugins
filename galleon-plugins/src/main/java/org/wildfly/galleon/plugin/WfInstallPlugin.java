@@ -56,21 +56,16 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
+import javax.xml.parsers.DocumentBuilder;
 
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
-
-import nu.xom.Attribute;
-import nu.xom.Builder;
-import nu.xom.Document;
-import nu.xom.Element;
-import nu.xom.Elements;
-import nu.xom.ParsingException;
-import nu.xom.Serializer;
 
 import org.jboss.galleon.Errors;
 import org.jboss.galleon.MessageWriter;
@@ -97,6 +92,10 @@ import org.jboss.galleon.universe.maven.repo.MavenRepoManager;
 import org.jboss.galleon.util.IoUtils;
 import org.jboss.galleon.util.CollectionUtils;
 import org.jboss.galleon.util.ZipUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.wildfly.galleon.plugin.config.CopyArtifact;
 import org.wildfly.galleon.plugin.config.CopyPath;
 import org.wildfly.galleon.plugin.config.DeletePath;
@@ -106,6 +105,7 @@ import org.wildfly.galleon.plugin.config.XslTransform;
 import org.wildfly.galleon.plugin.server.CliScriptRunner;
 import org.wildfly.galleon.plugin.transformer.JakartaTransformer;
 import org.wildfly.galleon.plugin.transformer.TransformedArtifact;
+import org.xml.sax.SAXException;
 
 /**
  *
@@ -380,7 +380,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 modulesTracker.processing(pkg);
                 try {
                     processModuleTemplate(pkg, entry.getKey());
-                } catch (IOException e) {
+                } catch (TransformerException | IOException e) {
                     throw new ProvisioningException("Failed to process JBoss module XML template for feature-pack "
                             + pkg.getFeaturePackRuntime().getFPID() + " package " + pkg.getName(), e);
                 }
@@ -828,32 +828,39 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
      * @throws ProvisioningException
      * @throws IOException
      */
-    private void processModuleTemplate(PackageRuntime pkg, Path moduleXmlRelativePath) throws ProvisioningException, IOException {
+    private void processModuleTemplate(PackageRuntime pkg, Path moduleXmlRelativePath) throws ProvisioningException, IOException , TransformerException{
         final Path moduleTemplate = pkg.getResource(WfConstants.PM, WfConstants.WILDFLY, WfConstants.MODULE).resolve(moduleXmlRelativePath);
         final Path targetPath = runtime.getStagedDir().resolve(moduleXmlRelativePath.toString());
 
-        final Builder builder = new Builder(false);
         final Document document;
-        try (BufferedReader reader = Files.newBufferedReader(moduleTemplate, StandardCharsets.UTF_8)) {
-            document = builder.build(reader);
-        } catch (ParsingException e) {
+        DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder documentBuilder;
+        try {
+            documentBuilder = documentBuilderFactory.newDocumentBuilder();
+        } catch (ParserConfigurationException ex) {
+            throw new IOException("Failed to parse document", ex);
+        }
+        try (InputStream reader = Files.newInputStream(moduleTemplate)) {
+            document = documentBuilder.parse(reader);
+        } catch (SAXException e) {
             throw new IOException("Failed to parse document", e);
         }
-        final Element rootElement = document.getRootElement();
-        if (! rootElement.getLocalName().equals("module") &&
+        final Element rootElement = document.getDocumentElement();
+
+        if (! rootElement.getNodeName().equals("module") &&
                 // module-alias files don't need to be processed
                 // the only reason their are parsed and serialized is to match the processing in the legacy build tools
                 // this fixes the difference in line endings between the two builds
-                !rootElement.getLocalName().equals("module-alias")) {
+                !rootElement.getNodeName().equals("module-alias")) {
             // just copy the content and leave
             Files.copy(moduleTemplate, targetPath, StandardCopyOption.REPLACE_EXISTING);
             return;
         }
         final Map<String, String> versionProps = fpArtifactVersions.get(pkg.getFeaturePackRuntime().getFPID().getProducer());
         // replace version, if any
-        final Attribute versionAttribute = rootElement.getAttribute("version");
-        if (versionAttribute != null) {
-            final String versionExpr = versionAttribute.getValue();
+        final String versionAttribute = rootElement.getAttribute("version");
+        if (versionAttribute != null && !versionAttribute.isEmpty()) {
+            final String versionExpr = versionAttribute;
             if (versionExpr.startsWith("${") && versionExpr.endsWith("}")) {
                 final String exprBody = versionExpr.substring(2, versionExpr.length() - 1);
                 final int optionsIndex = exprBody.indexOf('?');
@@ -865,221 +872,251 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 }
                 final MavenArtifact artifact = Utils.toArtifactCoords(versionProps, artifactName, false);
                 if (artifact != null) {
-                    versionAttribute.setValue(artifact.getVersion());
+                    rootElement.setAttribute("version", artifact.getVersion());
+                    System.out.println("SETTING TO VERSION " + artifact.getVersion());
                 }
             }
         }
         // replace all artifact declarations
-        final Element resourcesElement = rootElement.getFirstChildElement("resources", rootElement.getNamespaceURI());
-        if (resourcesElement != null) {
-            final Elements artifacts = resourcesElement.getChildElements("artifact", rootElement.getNamespaceURI());
-            final int artifactCount = artifacts.size();
-            for (int i = 0; i < artifactCount; i ++) {
-                final Element element = artifacts.get(i);
-                assert element.getLocalName().equals("artifact");
-                final Attribute attribute = element.getAttribute("name");
-                String coordsStr = attribute.getValue();
-                boolean jandex = false;
-                if (coordsStr.startsWith("${") && coordsStr.endsWith("}")) {
-                    coordsStr = coordsStr.substring(2, coordsStr.length() - 1);
-                    final int optionsIndex = coordsStr.indexOf('?');
-                    if (optionsIndex >= 0) {
-                        jandex = coordsStr.indexOf("jandex", optionsIndex) >= 0;
-                        coordsStr = coordsStr.substring(0, optionsIndex);
+        Element newResources = null;
+        final NodeList resourcesElement = rootElement.getChildNodes();
+        if (resourcesElement != null && resourcesElement.getLength() > 0) {
+            Element resources = null;
+            for (int i = 0; i < resourcesElement.getLength(); i++) {
+                Node n = resourcesElement.item(i);
+                if (n instanceof Element) {
+                    if ("resources".equals(n.getNodeName())) {
+                        resources = (Element) n;
+                        break;
                     }
-                    coordsStr = versionProps.get(coordsStr);
-                }
-
-                if(coordsStr == null) {
-                    continue;
-                }
-                MavenArtifact artifact;
-                try {
-                    artifact = Utils.toArtifactCoords(versionProps, coordsStr, false);
-                } catch (ProvisioningException e) {
-                    throw new IOException("Failed to resolve full coordinates for " + coordsStr, e);
-                }
-                Path moduleArtifact;
-
-                log.verbose("Resolving %s", artifact);
-                try {
-                    resolve(artifact);
-                } catch (ProvisioningException e) {
-                    throw new IOException("Failed to resolve artifact " + artifact, e);
-                }
-                moduleArtifact = artifact.getPath();
-                if (thinServer) {
-                    boolean generateMavenRepo = runtime.isOptionSet(OPTION_MVN_REPO);
-                    boolean isOverriddenArtifact = Utils.containsArtifact(overriddenArtifactVersions, artifact);
-                    // If a transformedFile is found, then the overridden artifact is not excluded from transformation.
-                    Path transformedFile = null;
-                    if (isOverriddenArtifact) {
-                        // if a provisioningMavenRepo has been set, and the artifact exists already in this directory
-                        // no need to transform the artifact to discover its status .
-                        String version = artifact.getVersion();
-                        boolean needTransformation = true;
-                        if (provisioningMavenRepo != null) {
-                            artifact.setVersion(version + jakartaTransformSuffix);
-                            Path transformedPath = getLocalRepoPath(artifact, provisioningMavenRepo, false);
-                            if (Files.exists(transformedPath)) {
-                                // This repository already contains the transformed artifact. This artifact is not excluded from transformation
-                                transformedFile = artifact.getPath();
-                                needTransformation = false;
-                            } else {
-                                artifact.setVersion(version);
-                                Path notTransformedPath = getLocalRepoPath(artifact, provisioningMavenRepo, false);
-                                if (Files.exists(notTransformedPath)) {
-                                    // The artifact is not transformed and present in the repo, so excluded from transformation.
-                                    needTransformation = false;
-                                }
-                            }
-                        } else {
-                            // Transform overridden artifacts only if we generate a maven repo.
-                            needTransformation = generateMavenRepo;
-                        }
-                        // Reset the version to the original one.
-                        artifact.setVersion(version);
-                        if (needTransformation) {
-                            boolean transformAttempt = (jakartaTransform || provisioningMavenRepo != null);
-                            if (transformAttempt) {
-                                // We don't know the state of this artifact, we must transform it.
-                                String name = getTransformedArtifactFileName(version, moduleArtifact.getFileName().toString(), jakartaTransformSuffix);
-                                transformedFile = runtime.getTmpPath(name);
-                                Files.createDirectories(transformedFile);
-                                Files.deleteIfExists(transformedFile);
-                                TransformedArtifact transformedArtifact = transform(artifact, transformedFile);
-                                if (!transformedArtifact.isTransformed()) {
-                                    transformedFile = null;
-                                }
-                            }
-                            // Overriden artifact is not present in the provisioning repo, must be added
-                            if (provisioningMavenRepo != null) {
-                                if (transformedFile == null) {
-                                    Path notTransformedVersionPath = getLocalRepoPath(artifact, provisioningMavenRepo);
-                                    Files.copy(moduleArtifact, notTransformedVersionPath.resolve(moduleArtifact.getFileName().toString()));
-                                } else {
-                                    artifact.setVersion(version + jakartaTransformSuffix);
-                                    Path transformedVersionPath = getLocalRepoPath(artifact, provisioningMavenRepo);
-                                    String name = getTransformedArtifactFileName(version, moduleArtifact.getFileName().toString(), jakartaTransformSuffix);
-                                    Files.copy(transformedFile, transformedVersionPath.resolve(name), StandardCopyOption.REPLACE_EXISTING);
-                                    artifact.setVersion(version);
-                                }
-                            }
-                        }
-                    }
-                    boolean isExcluded = isExcludedFromTransformation(artifact) || (isOverriddenArtifact && transformedFile == null);
-                    // If we have a maven repo for provisioning, consider that we are in a transformation case
-                    // even if jakartaTransform is false.
-                    boolean requireSuffix = (jakartaTransform || provisioningMavenRepo != null) && !isExcluded;
-                    // ignore jandex variable, just resolve coordinates to a string
-                    final StringBuilder buf = new StringBuilder();
-                    buf.append(artifact.getGroupId());
-                    buf.append(':');
-                    buf.append(artifact.getArtifactId());
-                    buf.append(':');
-                    buf.append(artifact.getVersion()).append(requireSuffix ? jakartaTransformSuffix : "");
-                    if (!artifact.getClassifier().isEmpty()) {
-                        buf.append(':');
-                        buf.append(artifact.getClassifier());
-                    }
-                    attribute.setValue(buf.toString());
-                    if (generateMavenRepo) {
-                        String path = runtime.getOptionValue(OPTION_MVN_REPO);
-                        Path repo = Paths.get(path);
-                        String version = artifact.getVersion();
-                        if (requireSuffix) {
-                            // Copy to the maven repo with transformed suffix.
-                            artifact.setVersion(version + jakartaTransformSuffix);
-                        }
-                        Path versionPath = getLocalRepoPath(artifact, repo);
-                        Path actualTarget = versionPath.resolve(moduleArtifact.getFileName().toString());
-                        if (jakartaTransform && !isExcluded) {
-                            // The artifact could already exist in case of redefined module as alias (eg: javax.security.jacc.api).
-                            // The transformer doesn't accept existing target, so skip transformation.
-                            String name = getTransformedArtifactFileName(version, moduleArtifact.getFileName().toString(), jakartaTransformSuffix);
-                            Path transformedTarget = versionPath.resolve(name);
-                            if (!Files.exists(transformedTarget)) {
-                                if (transformedFile == null) {
-                                    transform(artifact, transformedTarget);
-                                } else {
-                                    // An overridden artifact that we just transformed
-                                    Files.copy(transformedFile, transformedTarget, StandardCopyOption.REPLACE_EXISTING);
-                                }
-                            }
-                        } else {
-                            // We could have a transformed overridden artifact
-                            if (transformedFile == null) {
-                                Files.copy(moduleArtifact, actualTarget, StandardCopyOption.REPLACE_EXISTING);
-                            } else {
-                                Files.copy(transformedFile, versionPath.resolve(transformedFile.getFileName()), StandardCopyOption.REPLACE_EXISTING);
-                            }
-                        }
-                        // Resolve the original pom file.
-                        artifact.setVersion(version);
-                        Path pomFile = getPomArtifactPath(artifact);
-                        Files.copy(pomFile, versionPath.resolve(pomFile.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
-                    }
-                } else {
-                    final Path targetDir = targetPath.getParent();
-                    final String artifactFileName = moduleArtifact.getFileName().toString();
-                    String finalFileName;
-
-                    if (jandex) {
-                        final int lastDot = artifactFileName.lastIndexOf(".");
-                        final File target = new File(targetDir.toFile(),
-                                new StringBuilder().append(artifactFileName.substring(0, lastDot)).append("-jandex")
-                                        .append(artifactFileName.substring(lastDot)).toString());
-                        JandexIndexer.createIndex(moduleArtifact.toFile(), new FileOutputStream(target), log);
-                        finalFileName = target.getName();
-                    } else {
-                        finalFileName = artifactFileName;
-                        if (jakartaTransform) {
-                            boolean toTransform = !isExcludedFromTransformation(artifact);
-                            if (toTransform) {
-                                finalFileName = getTransformedArtifactFileName(artifact.getVersion(), finalFileName, jakartaTransformSuffix);
-                                Path transformedPath = targetDir.resolve(finalFileName);
-                                TransformedArtifact transformedArtifact = transform(artifact, transformedPath);
-                                // This can happen with overridden artifacts that don't require transformation.
-                                if (!transformedArtifact.isTransformed()) {
-                                    // Ignore transformation
-                                    toTransform = false;
-                                    finalFileName = artifactFileName;
-                                    Files.delete(transformedPath);
-                                    Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
-                                }
-                            } else {
-                                Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
-                            }
-                            if (transformationMavenRepo != null) {
-                                // Copy to the transformationMavenRepo for future use
-                                String version = artifact.getVersion();
-                                // Copy to the maven repo with transformed suffix.
-                                if (toTransform) {
-                                    artifact.setVersion(version + jakartaTransformSuffix);
-                                }
-                                Path versionPath = getLocalRepoPath(artifact, transformationMavenRepo);
-                                // Resolve the original pom file.
-                                artifact.setVersion(version);
-                                Path pomFile = getPomArtifactPath(artifact);
-                                Files.copy(pomFile, versionPath.resolve(pomFile.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
-                                Files.copy(targetDir.resolve(finalFileName), versionPath.resolve(finalFileName), StandardCopyOption.REPLACE_EXISTING);
-                            }
-                        } else {
-                            Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
-                        }
-                    }
-                    element.setLocalName("resource-root");
-                    attribute.setLocalName("path");
-                    attribute.setValue(finalFileName);
-                }
-                if (schemaGroups.contains(artifact.getGroupId())) {
-                    extractSchemas(moduleArtifact);
                 }
             }
+            if (resources != null) {
+                final NodeList artifacts = resources.getChildNodes();
+                for (int i = 0; i < artifacts.getLength(); i++) {
+                    Node n = artifacts.item(i);
+                    if (n instanceof Element) {
+                        if ("artifact".equals(n.getNodeName())) {
+                            final Element element = (Element) n;
+                            assert element.getNodeName().equals("artifact");
+                            String coordsStr = element.getAttribute("name");
+                            boolean jandex = false;
+                            if (coordsStr.startsWith("${") && coordsStr.endsWith("}")) {
+                                coordsStr = coordsStr.substring(2, coordsStr.length() - 1);
+                                final int optionsIndex = coordsStr.indexOf('?');
+                                if (optionsIndex >= 0) {
+                                    jandex = coordsStr.indexOf("jandex", optionsIndex) >= 0;
+                                    coordsStr = coordsStr.substring(0, optionsIndex);
+                                }
+                                coordsStr = versionProps.get(coordsStr);
+                            }
+
+                            if (coordsStr == null) {
+                                continue;
+                            }
+                            MavenArtifact artifact;
+                            try {
+                                artifact = Utils.toArtifactCoords(versionProps, coordsStr, false);
+                            } catch (ProvisioningException e) {
+                                throw new IOException("Failed to resolve full coordinates for " + coordsStr, e);
+                            }
+                            Path moduleArtifact;
+
+                            log.verbose("Resolving %s", artifact);
+                            try {
+                                resolve(artifact);
+                            } catch (ProvisioningException e) {
+                                throw new IOException("Failed to resolve artifact " + artifact, e);
+                            }
+                            moduleArtifact = artifact.getPath();
+                            if (thinServer) {
+                                boolean generateMavenRepo = runtime.isOptionSet(OPTION_MVN_REPO);
+                                boolean isOverriddenArtifact = Utils.containsArtifact(overriddenArtifactVersions, artifact);
+                                // If a transformedFile is found, then the overridden artifact is not excluded from transformation.
+                                Path transformedFile = null;
+                                if (isOverriddenArtifact) {
+                                    // if a provisioningMavenRepo has been set, and the artifact exists already in this directory
+                                    // no need to transform the artifact to discover its status .
+                                    String version = artifact.getVersion();
+                                    boolean needTransformation = true;
+                                    if (provisioningMavenRepo != null) {
+                                        artifact.setVersion(version + jakartaTransformSuffix);
+                                        Path transformedPath = getLocalRepoPath(artifact, provisioningMavenRepo, false);
+                                        if (Files.exists(transformedPath)) {
+                                            // This repository already contains the transformed artifact. This artifact is not excluded from transformation
+                                            transformedFile = artifact.getPath();
+                                            needTransformation = false;
+                                        } else {
+                                            artifact.setVersion(version);
+                                            Path notTransformedPath = getLocalRepoPath(artifact, provisioningMavenRepo, false);
+                                            if (Files.exists(notTransformedPath)) {
+                                                // The artifact is not transformed and present in the repo, so excluded from transformation.
+                                                needTransformation = false;
+                                            }
+                                        }
+                                    } else {
+                                        // Transform overridden artifacts only if we generate a maven repo.
+                                        needTransformation = generateMavenRepo;
+                                    }
+                                    // Reset the version to the original one.
+                                    artifact.setVersion(version);
+                                    if (needTransformation) {
+                                        boolean transformAttempt = (jakartaTransform || provisioningMavenRepo != null);
+                                        if (transformAttempt) {
+                                            // We don't know the state of this artifact, we must transform it.
+                                            String name = getTransformedArtifactFileName(version, moduleArtifact.getFileName().toString(), jakartaTransformSuffix);
+                                            transformedFile = runtime.getTmpPath(name);
+                                            Files.createDirectories(transformedFile);
+                                            Files.deleteIfExists(transformedFile);
+                                            TransformedArtifact transformedArtifact = transform(artifact, transformedFile);
+                                            if (!transformedArtifact.isTransformed()) {
+                                                transformedFile = null;
+                                            }
+                                        }
+                                        // Overriden artifact is not present in the provisioning repo, must be added
+                                        if (provisioningMavenRepo != null) {
+                                            if (transformedFile == null) {
+                                                Path notTransformedVersionPath = getLocalRepoPath(artifact, provisioningMavenRepo);
+                                                Files.copy(moduleArtifact, notTransformedVersionPath.resolve(moduleArtifact.getFileName().toString()));
+                                            } else {
+                                                artifact.setVersion(version + jakartaTransformSuffix);
+                                                Path transformedVersionPath = getLocalRepoPath(artifact, provisioningMavenRepo);
+                                                String name = getTransformedArtifactFileName(version, moduleArtifact.getFileName().toString(), jakartaTransformSuffix);
+                                                Files.copy(transformedFile, transformedVersionPath.resolve(name), StandardCopyOption.REPLACE_EXISTING);
+                                                artifact.setVersion(version);
+                                            }
+                                        }
+                                    }
+                                }
+                                boolean isExcluded = isExcludedFromTransformation(artifact) || (isOverriddenArtifact && transformedFile == null);
+                                // If we have a maven repo for provisioning, consider that we are in a transformation case
+                                // even if jakartaTransform is false.
+                                boolean requireSuffix = (jakartaTransform || provisioningMavenRepo != null) && !isExcluded;
+                                // ignore jandex variable, just resolve coordinates to a string
+                                final StringBuilder buf = new StringBuilder();
+                                buf.append(artifact.getGroupId());
+                                buf.append(':');
+                                buf.append(artifact.getArtifactId());
+                                buf.append(':');
+                                buf.append(artifact.getVersion()).append(requireSuffix ? jakartaTransformSuffix : "");
+                                if (!artifact.getClassifier().isEmpty()) {
+                                    buf.append(':');
+                                    buf.append(artifact.getClassifier());
+                                }
+                                element.setAttribute("name", buf.toString());
+                                if (generateMavenRepo) {
+                                    String path = runtime.getOptionValue(OPTION_MVN_REPO);
+                                    Path repo = Paths.get(path);
+                                    String version = artifact.getVersion();
+                                    if (requireSuffix) {
+                                        // Copy to the maven repo with transformed suffix.
+                                        artifact.setVersion(version + jakartaTransformSuffix);
+                                    }
+                                    Path versionPath = getLocalRepoPath(artifact, repo);
+                                    Path actualTarget = versionPath.resolve(moduleArtifact.getFileName().toString());
+                                    if (jakartaTransform && !isExcluded) {
+                                        // The artifact could already exist in case of redefined module as alias (eg: javax.security.jacc.api).
+                                        // The transformer doesn't accept existing target, so skip transformation.
+                                        String name = getTransformedArtifactFileName(version, moduleArtifact.getFileName().toString(), jakartaTransformSuffix);
+                                        Path transformedTarget = versionPath.resolve(name);
+                                        if (!Files.exists(transformedTarget)) {
+                                            if (transformedFile == null) {
+                                                transform(artifact, transformedTarget);
+                                            } else {
+                                                // An overridden artifact that we just transformed
+                                                Files.copy(transformedFile, transformedTarget, StandardCopyOption.REPLACE_EXISTING);
+                                            }
+                                        }
+                                    } else {
+                                        // We could have a transformed overridden artifact
+                                        if (transformedFile == null) {
+                                            Files.copy(moduleArtifact, actualTarget, StandardCopyOption.REPLACE_EXISTING);
+                                        } else {
+                                            Files.copy(transformedFile, versionPath.resolve(transformedFile.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                                        }
+                                    }
+                                    // Resolve the original pom file.
+                                    artifact.setVersion(version);
+                                    Path pomFile = getPomArtifactPath(artifact);
+                                    Files.copy(pomFile, versionPath.resolve(pomFile.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
+                                }
+                            } else {
+                                final Path targetDir = targetPath.getParent();
+                                final String artifactFileName = moduleArtifact.getFileName().toString();
+                                String finalFileName;
+
+                                if (jandex) {
+                                    final int lastDot = artifactFileName.lastIndexOf(".");
+                                    final File target = new File(targetDir.toFile(),
+                                            new StringBuilder().append(artifactFileName.substring(0, lastDot)).append("-jandex")
+                                                    .append(artifactFileName.substring(lastDot)).toString());
+                                    JandexIndexer.createIndex(moduleArtifact.toFile(), new FileOutputStream(target), log);
+                                    finalFileName = target.getName();
+                                } else {
+                                    finalFileName = artifactFileName;
+                                    if (jakartaTransform) {
+                                        boolean toTransform = !isExcludedFromTransformation(artifact);
+                                        if (toTransform) {
+                                            finalFileName = getTransformedArtifactFileName(artifact.getVersion(), finalFileName, jakartaTransformSuffix);
+                                            Path transformedPath = targetDir.resolve(finalFileName);
+                                            TransformedArtifact transformedArtifact = transform(artifact, transformedPath);
+                                            // This can happen with overridden artifacts that don't require transformation.
+                                            if (!transformedArtifact.isTransformed()) {
+                                                // Ignore transformation
+                                                toTransform = false;
+                                                finalFileName = artifactFileName;
+                                                Files.delete(transformedPath);
+                                                Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
+                                            }
+                                        } else {
+                                            Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
+                                        }
+                                        if (transformationMavenRepo != null) {
+                                            // Copy to the transformationMavenRepo for future use
+                                            String version = artifact.getVersion();
+                                            // Copy to the maven repo with transformed suffix.
+                                            if (toTransform) {
+                                                artifact.setVersion(version + jakartaTransformSuffix);
+                                            }
+                                            Path versionPath = getLocalRepoPath(artifact, transformationMavenRepo);
+                                            // Resolve the original pom file.
+                                            artifact.setVersion(version);
+                                            Path pomFile = getPomArtifactPath(artifact);
+                                            Files.copy(pomFile, versionPath.resolve(pomFile.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
+                                            Files.copy(targetDir.resolve(finalFileName), versionPath.resolve(finalFileName), StandardCopyOption.REPLACE_EXISTING);
+                                        }
+                                    } else {
+                                        Files.copy(moduleArtifact, targetDir.resolve(artifactFileName), StandardCopyOption.REPLACE_EXISTING);
+                                    }
+                                }
+                                if (newResources == null) {
+                                    newResources = document.createElement("resources");
+                                }
+                                Element newResource = document.createElement("resource-root");
+                                newResource.setAttribute("path", finalFileName);
+                                newResources.appendChild(newResource);
+                            }
+                            if (schemaGroups.contains(artifact.getGroupId())) {
+                                extractSchemas(moduleArtifact);
+                            }
+                        }
+                    }
+                }
+                if (newResources != null) {
+                    rootElement.removeChild(resources);
+                    rootElement.appendChild(newResources);
+                }
+            } else {
+                System.out.println("NULL RESOURCES FOR " + moduleTemplate);
+            }
         }
+
         // now serialize the result
-        try (OutputStream outputStream = Files.newOutputStream(targetPath)) {
-            new Serializer(outputStream).write(document);
+        try {
+            Transformer transformer = TransformerFactory.newInstance().newTransformer();
+            StreamResult output = new StreamResult(targetPath.toFile());
+            DOMSource input = new DOMSource(document);
+            transformer.transform(input, output);
         } catch (Throwable t) {
             try {
                 Files.deleteIfExists(targetPath);
