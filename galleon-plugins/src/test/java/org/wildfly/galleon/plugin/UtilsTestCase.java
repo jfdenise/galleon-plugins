@@ -16,7 +16,9 @@
  */
 package org.wildfly.galleon.plugin;
 
+import java.util.HashMap;
 import java.util.Map;
+import org.jboss.galleon.ProvisioningException;
 import org.junit.Assert;
 import org.junit.Test;
 /**
@@ -89,6 +91,325 @@ public class UtilsTestCase {
                 } catch (IllegalArgumentException ex) {
                     // XXX OK expected
                 }
+            }
+        }
+
+        {
+            String str = "grp:art:${a,b;c}:class:jar";
+            Map<String, String> map = Utils.toArtifactsMap(str);
+            Assert.assertEquals(1, map.size());
+            String key = "grp:art::class";
+            String value = map.get(key);
+            Assert.assertEquals(str, value);
+        }
+    }
+
+    @Test
+    public void testVersionExpression() throws Exception {
+        String envVar = "WFGP_TEST_VERSION";
+        String env = "env." + envVar;
+        String envVersionValue = System.getenv(envVar);
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String key = "a:b";
+            String v = "123";
+            String val = "a:b:"+v+"::jar";
+            versionsProps.put(key, val);
+            Assert.assertEquals(v, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+            Assert.assertEquals(v, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+        }
+
+        {
+            String prop = "org.wfgp.version";
+            String versionValue = "9999";
+            String key = "a:b";
+            String val = "a:b:${" + prop + "}::jar";
+            Map<String, String> versionsProps = Utils.toArtifactsMap(val);
+            System.setProperty(prop, versionValue);
+            try {
+                Assert.assertEquals(versionValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+                Assert.assertEquals(versionValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+            } finally {
+                System.clearProperty(prop);
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop = "org.wfgp.version";
+            String key = "a:b";
+            String defaultValue = "010101";
+            String val = "a:b:${" + prop + ";" + defaultValue + "}::jar";
+            versionsProps.put(key, val);
+            Assert.assertEquals(defaultValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+            Assert.assertEquals(defaultValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop = "org.wfgp.version";
+            String key = "a:b";
+            String defaultValue = ";01;0101;";
+            String val = "a:b:${" + prop + ";" + defaultValue + "}::jar";
+            versionsProps.put(key, val);
+            Assert.assertEquals(defaultValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+            Assert.assertEquals(defaultValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop = "org.wfgp.version";
+            String key = "a:b";
+            String defaultValue = "010101";
+            String val = "a:b:  ${" + prop + ";" + defaultValue + "}  ::jar";
+            versionsProps.put(key, val);
+            Assert.assertEquals(defaultValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+            Assert.assertEquals(defaultValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop = "org.wfgp.version";
+            String key = "a:b";
+            String defaultValue = "";
+            String val = "a:b:${" + prop + ";}::jar";
+            versionsProps.put(key, val);
+            Assert.assertEquals(defaultValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+            Assert.assertEquals(defaultValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop = "org.wfgp.version";
+            String key = "a:b";
+            String defaultValue = "";
+            String val = "a:b:${" + prop + ",;}::jar";
+            versionsProps.put(key, val);
+            try {
+                Utils.toArtifactCoords(versionsProps, key, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + key, ex.getMessage());
+            }
+            try {
+                Utils.toArtifactCoords(versionsProps, val, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + val, ex.getMessage());
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String key = "a:b";
+            String defaultValue = "foo";
+            String val = "a:b:${,,;   "+defaultValue+"   }::jar";
+            versionsProps.put(key, val);
+            try {
+                Utils.toArtifactCoords(versionsProps, key, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + key, ex.getMessage());
+            }
+            try {
+                Utils.toArtifactCoords(versionsProps, val, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + val, ex.getMessage());
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String key = "a:b";
+            String defaultValue = "";
+            String val = "a:b:${;}::jar";
+            versionsProps.put(key, val);
+            try {
+                Utils.toArtifactCoords(versionsProps, key, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + key, ex.getMessage());
+            }
+            try {
+                Utils.toArtifactCoords(versionsProps, val, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + val, ex.getMessage());
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String key = "a:b";
+            String defaultValue = "";
+            String val = "a:b:${}::jar";
+            versionsProps.put(key, val);
+            try {
+                Utils.toArtifactCoords(versionsProps, key, false).getVersion();
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + key, ex.getMessage());
+            }
+            try {
+                Utils.toArtifactCoords(versionsProps, val, false).getVersion();
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + val, ex.getMessage());
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String key = "a:b";
+            String defaultValue = "";
+            String val = "a:b:${,,,,,,,,,,;}::jar";
+            versionsProps.put(key, val);
+            try {
+                Utils.toArtifactCoords(versionsProps, key, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + key, ex.getMessage());
+            }
+            try {
+                Utils.toArtifactCoords(versionsProps, val, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + val, ex.getMessage());
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String key = "a:b";
+            String val = "a:b:${" + env + "}::jar";
+            versionsProps.put(key, val);
+            Assert.assertEquals(envVersionValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+            Assert.assertEquals(envVersionValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop = "org.wfgp.version";
+            String versionValue = "0000";
+            String key = "a:b";
+            String val = "a:b:${" + prop + "," + env + "}::jar";
+            versionsProps.put(key, val);
+            System.setProperty(prop, versionValue);
+            try {
+                Assert.assertEquals(versionValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+                Assert.assertEquals(versionValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+            } finally {
+                System.clearProperty(prop);
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop = "org.wfgp.version";
+            String versionValue = "0000";
+            String key = "a:b";
+            String val = "a:b:${" + env + "," + prop + "}::jar";
+            versionsProps.put(key, val);
+            System.setProperty(prop, versionValue);
+            try {
+                Assert.assertEquals(envVersionValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+                Assert.assertEquals(envVersionValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+            } finally {
+                System.clearProperty(prop);
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop1 = "org.wfgp.version1";
+            String prop2 = "org.wfgp.version2";
+            String versionValue = "5555";
+            String key = "a:b";
+            String val = "a:b:${ " + prop1 + " , " + prop2 + " }::jar";
+            versionsProps.put(key, val);
+            System.setProperty(prop2, versionValue);
+            try {
+                Assert.assertEquals(versionValue, Utils.toArtifactCoords(versionsProps, key, false).getVersion());
+                Assert.assertEquals(versionValue, Utils.toArtifactCoords(versionsProps, val, false).getVersion());
+            } finally {
+                System.clearProperty(prop2);
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String prop = "org.wfgp.version";
+            String key = "a:b";
+            String val = "a:b:${" + prop + "}::jar";
+            versionsProps.put(key, val);
+            try {
+                Utils.toArtifactCoords(versionsProps, key, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Unresolved expression for " + key, ex.getMessage());
+            }
+            try {
+                Utils.toArtifactCoords(versionsProps, val, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Unresolved expression for " + val, ex.getMessage());
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String unknownEnv = "env.WFGP_FOO";
+            String key = "a:b";
+            String val = "a:b:${" + unknownEnv + "}::jar";
+            versionsProps.put(key, val);
+            try {
+                Utils.toArtifactCoords(versionsProps, key, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Unresolved expression for " + key, ex.getMessage());
+            }
+            try {
+                Utils.toArtifactCoords(versionsProps, val, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Unresolved expression for " + val, ex.getMessage());
+            }
+        }
+
+        {
+            Map<String, String> versionsProps = new HashMap<>();
+            String key = "a:b";
+            String val = "a:b:${env.;foo}::jar";
+            versionsProps.put(key, val);
+            try {
+                Utils.toArtifactCoords(versionsProps, key, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + key, ex.getMessage());
+            }
+            try {
+                Utils.toArtifactCoords(versionsProps, val, false);
+                throw new Exception("Should have failed");
+            } catch (ProvisioningException ex) {
+                // XXX OK expected
+                Assert.assertEquals("Invalid syntax for expression " + val, ex.getMessage());
             }
         }
     }

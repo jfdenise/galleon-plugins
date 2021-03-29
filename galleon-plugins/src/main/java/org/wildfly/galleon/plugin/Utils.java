@@ -55,6 +55,10 @@ import org.wildfly.galleon.plugin.config.CopyArtifact;
  */
 public class Utils {
 
+    private static final String EXPRESSION_PREFIX = "${";
+    private static final String EXPRESSION_SUFFIX = "}";
+    private static final String EXPRESSION_ENV_VAR = "env.";
+    private static final String EXPRESSION_DEFAULT_VALUE_SEPARATOR = ";";
     public static void readProperties(Path propsFile, Map<String, String> propsMap) throws ProvisioningException {
         try(BufferedReader reader = Files.newBufferedReader(propsFile)) {
             String line = reader.readLine();
@@ -105,7 +109,8 @@ public class Utils {
         artifact.setExtension(MavenArtifact.EXT_JAR);
         if(parts.length > 2) {
             if(!parts[2].isEmpty()) {
-                artifact.setVersion(parts[2]);
+                String version = resolveExpression(str, parts[2]);
+                artifact.setVersion(version);
             }
             if(parts.length > 3) {
                 artifact.setClassifier(parts[3]);
@@ -130,9 +135,59 @@ public class Utils {
             if (parts.length < 3) {
                 throw new ProvisioningException("Failed to resolve the version for artifact: " + resolvedStr);
             }
-            artifact.setVersion(parts[2]);
+            String version = resolveExpression(str, parts[2]);
+            artifact.setVersion(version);
         }
         return artifact;
+    }
+
+    /**
+     * Resolve an expression composed of ${a,b,c;defaultValue} Where a, b and c can be System properties or env.XXX env variables.
+     */
+    private static String resolveExpression(String coords, String str) throws ProvisioningException {
+        if (str == null) {
+            return str;
+        }
+        String resolved = str;
+        str = str.trim();
+        if (str.startsWith(EXPRESSION_PREFIX) && str.endsWith(EXPRESSION_SUFFIX)) {
+            String expressions = str.substring(EXPRESSION_PREFIX.length(), str.length() - EXPRESSION_SUFFIX.length());
+            int defValueSeparator = expressions.indexOf(EXPRESSION_DEFAULT_VALUE_SEPARATOR);
+            String defaultValue = null;
+            if (defValueSeparator >= 0) {
+                defaultValue = expressions.substring(defValueSeparator+1, expressions.length());
+                defaultValue = defaultValue.trim();
+                expressions = expressions.substring(0, defValueSeparator);
+            }
+            String[] split = expressions.split(",", -1);
+            String value;
+            for (String expression : split) {
+                expression = expression.trim();
+                if (expression.isEmpty()) {
+                   throw new ProvisioningException("Invalid syntax for expression " + coords);
+                }
+                if (expression.startsWith(EXPRESSION_ENV_VAR)) {
+                    expression = expression.substring(EXPRESSION_ENV_VAR.length(), expression.length());
+                    if (expression.isEmpty()) {
+                        throw new ProvisioningException("Invalid syntax for expression " + coords);
+                    }
+                    value = System.getenv(expression);
+                    if (value != null) {
+                        return value;
+                    }
+                } else {
+                    value = System.getProperty(expression);
+                    if (value != null) {
+                        return value;
+                    }
+                }
+            }
+            if (defaultValue == null) {
+                throw new ProvisioningException("Unresolved expression for " + coords);
+            }
+            resolved = defaultValue;
+        }
+        return resolved;
     }
 
     public static List<Path> collectLayersConf(ProvisioningLayout<?> layout) throws ProvisioningException {
