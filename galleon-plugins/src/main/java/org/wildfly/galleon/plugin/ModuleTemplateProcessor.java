@@ -96,14 +96,6 @@ abstract class ModuleTemplateProcessor {
             attribute.setValue(coords);
         }
 
-        void reResolveArtifact() throws IOException, ProvisioningException {
-            if(artifact == null) {
-                throw new ProvisioningException("No artifact to re-resolve");
-            }
-            artifact.setPath(null);
-            resolveArtifact();
-        }
-
         private void resolveArtifact() throws IOException, ProvisioningException {
             plugin.resolve(artifact);
         }
@@ -179,7 +171,7 @@ abstract class ModuleTemplateProcessor {
             if (moduleArtifact.hasMavenArtifact()) {
                 boolean isOverriddenArtifact = getPlugin().isOverriddenArtifact(moduleArtifact.getMavenArtifact());
                 if (isOverriddenArtifact) {
-                    installer.setupOverriddenArtifact(moduleArtifact);
+                    installer.setupOverriddenArtifact(moduleArtifact.getMavenArtifact());
                 }
                 Path artifactPath = moduleArtifact.getMavenArtifact().getPath();
                 processArtifact(moduleArtifact);

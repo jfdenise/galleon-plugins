@@ -57,7 +57,7 @@ public abstract class ModuleArtifactInstaller {
         return artifact.getVersion();
     }
 
-    void setupOverriddenArtifact(ModuleTemplateProcessor.ModuleArtifact mavenArtifact) throws IOException, MavenUniverseException, ProvisioningException {
+    void setupOverriddenArtifact(MavenArtifact mavenArtifact) throws IOException, MavenUniverseException, ProvisioningException {
         // Nothing to do, overridden artifacts will get resolved from maven repo.
     }
 

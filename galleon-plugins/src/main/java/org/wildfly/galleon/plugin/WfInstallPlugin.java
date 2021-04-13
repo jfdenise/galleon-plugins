@@ -438,12 +438,10 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                             log.print(format, args);
                         }
                     };
-
-                    if (!exampleConfigs.isEmpty()) {
-                        // Track where we store transformed artifacts so we can configure the embedded
-                        // server to point there when we generate example configs
-                        transformationMavenRepo = generatedMavenRepo != null ? generatedMavenRepo : runtime.getTmpPath("jakarta-transform-repo");
-                    }
+                    // We don't know yet if example configs are present, populate the local cache in all cases.
+                    // Track where we store transformed artifacts so we can configure the embedded
+                    // server to point there when we generate example configs
+                    transformationMavenRepo = generatedMavenRepo != null ? generatedMavenRepo : runtime.getTmpPath("jakarta-transform-repo");
                 }
             }
             ee9Transformer = new EE9ArtifactTransformer(runtime,
@@ -876,7 +874,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         try {
             log.verbose("Resolving artifact %s ", artifact);
             resolve(artifact);
-            final Path jarSrc = artifact.getPath();
+            // If transformation occurs, the actual jar artifact file is renamed.
+            // * Copied artifact for which we expect a well known name have a location file name, e.g.: jboss-modules.jar or bin/client/jboss-client.jar
+            // * Copied artifact that are extracted, e.g.: openssl lib, the jar name is meaningless.
+            // * Copied artifact that expect the name of the JAR artifact file to be used are impacted. (eg: resteasy-spring jr located in main/bundled/resteasy-spring-jar/resteasy-spring-XXX.Final-ee9.jar)
+            Path jarSrc =  getEE9Transformer().installCopiedArtifact(artifact);
             String location = copyArtifact.getToLocation();
             if (!location.isEmpty() && location.charAt(location.length() - 1) == '/') {
                 // if the to location ends with a / then it is a directory
@@ -887,6 +889,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             final Path jarTarget = runtime.getStagedDir().resolve(location);
 
             Files.createDirectories(jarTarget.getParent());
+
             log.verbose("Copying artifact %s to %s", jarSrc, jarTarget);
             if (copyArtifact.isExtract()) {
                 Utils.extractArtifact(jarSrc, jarTarget, copyArtifact);

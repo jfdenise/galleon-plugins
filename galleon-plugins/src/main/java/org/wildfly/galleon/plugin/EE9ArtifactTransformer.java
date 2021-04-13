@@ -144,6 +144,40 @@ class EE9ArtifactTransformer extends ModuleArtifactInstaller {
         return artifact.getVersion() + (transformed ? jakartaTransformSuffix : "");
     }
 
+    /**
+     * A copied artifact can be transformed and installed in generated maven repo or local cache (thin server),
+     * in provisioning repo (if overridden and not existing).
+     */
+    Path installCopiedArtifact(MavenArtifact artifact) throws IOException, ProvisioningException {
+        Path originalPath = artifact.getPath();
+        Path transformedFile = null;
+        boolean overridden = plugin.isOverriddenArtifact(artifact);
+        if (overridden) {
+            setupOverriddenArtifact(artifact);
+            String gav = ArtifactCoords.newGav(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion()).toString();
+            transformedFile = transformedOverriden.get(gav);
+        }
+        boolean needsTransformation = jakartaTransform && !isExcludedFromTransformation(artifact);
+        if (needsTransformation) {
+            if (transformedFile == null) {
+                String transformedFileName = getTransformedArtifactFileName(artifact.getVersion(),
+                        artifact.getPath().getFileName().toString(),
+                        jakartaTransformSuffix);
+                transformedFile = runtime.getTmpPath().resolve(transformedFileName);
+                Files.createDirectories(transformedFile);
+                Files.deleteIfExists(transformedFile);
+                transform(artifact, transformedFile);
+            }
+        }
+        // The cache is not used to avoid re-transformation if example configs.
+        // It is populated in case it is a generated maven repository that could be re-used in a next
+        // provisioning execution as a provisioning repository.
+        if (hasLocalCache()) {
+            installInCache(needsTransformation, artifact, originalPath.getFileName().toString(), originalPath.getParent());
+        }
+        return transformedFile == null ? originalPath : transformedFile;
+    }
+
     private TransformedArtifact transform(MavenArtifact artifact, Path targetDir) throws IOException {
         TransformedArtifact a = JakartaTransformer.transform(jakartaTransformConfigsDir, artifact.getPath(), targetDir, jakartaTransformVerbose, logHandler);
         return a;
@@ -207,8 +241,7 @@ class EE9ArtifactTransformer extends ModuleArtifactInstaller {
      * Exclude it if not transformed, store transformed file for use when artifact is installed.
      */
     @Override
-    void setupOverriddenArtifact(ModuleTemplateProcessor.ModuleArtifact moduleArtifact) throws IOException, MavenUniverseException, ProvisioningException {
-        MavenArtifact artifact = moduleArtifact.getMavenArtifact();
+    void setupOverriddenArtifact(MavenArtifact artifact) throws IOException, MavenUniverseException, ProvisioningException {
         String version = artifact.getVersion();
         Path artifactPath = artifact.getPath();
         OverriddenArtifactStatus status;
@@ -244,7 +277,8 @@ class EE9ArtifactTransformer extends ModuleArtifactInstaller {
                 }
                 // We must force the artifact to be resolved again, the provisioning repo has been updated.
                 // The artifact is now in the provisioning repository
-                moduleArtifact.reResolveArtifact();
+                artifact.setPath(null);
+                plugin.resolve(artifact);
             }
         }
         // Store the File and update exclusion status, they will be used when installing the artifact.
