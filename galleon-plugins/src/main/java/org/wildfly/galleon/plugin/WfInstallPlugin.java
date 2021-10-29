@@ -687,7 +687,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             MavenArtifact artifact = Utils.toArtifactCoords(mergedArtifactVersions, "org.jboss.modules:jboss-modules", false);
             artifactResolver.resolve(artifact);
             cp[1] = artifact.getPath().toUri().toURL();
-            artifact = Utils.toArtifactCoords(mergedArtifactVersions, "org.wildfly.core:wildfly-cli::client", false);
+            try {
+                artifact = Utils.toArtifactCoords(mergedArtifactVersions, "org.wildfly.core:wildfly-cli::client", false);
+            } catch(ProvisioningException ex) {
+                artifact = Utils.toArtifactCoords(mergedArtifactVersions, "org.wildfly:wildfly-cli-jakarta", false);
+            }
             artifactResolver.resolve(artifact);
             cp[2] = artifact.getPath().toUri().toURL();
         } catch (IOException e) {
