@@ -42,8 +42,13 @@ public class CopyArtifact implements WildFlyPackageTask {
     private List<FileFilter> filters = Collections.emptyList();
     private boolean optional;
     private boolean featurePackVersion;
+    private boolean assemble;
 
     public CopyArtifact() {
+    }
+
+    public void setAssemble() {
+        this.assemble = true;
     }
 
     public void setArtifact(String artifact) {
@@ -72,6 +77,10 @@ public class CopyArtifact implements WildFlyPackageTask {
 
     public boolean isExtract() {
         return extract;
+    }
+
+    public boolean isAssemble() {
+        return assemble;
     }
 
     public List<FileFilter> getFilters() {
