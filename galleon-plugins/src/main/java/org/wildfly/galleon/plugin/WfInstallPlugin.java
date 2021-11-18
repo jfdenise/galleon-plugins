@@ -946,7 +946,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             log.verbose("Resolving artifact %s ", artifact);
             artifactResolver.resolve(artifact);
             if (copyArtifact.isAssemble()) {
-                new AssembleArtifactConsumer(runtime, artifactResolver, log).assemble(artifact);
+                new AssembleArtifactConsumer(runtime, artifactResolver, log).assemble(artifact, mergedArtifactVersions);
             }
             // If transformation occurs, the actual jar artifact file is renamed.
             // * Copied artifact for which we expect a well known name have a location file name, e.g.: jboss-modules.jar or bin/client/jboss-client.jar

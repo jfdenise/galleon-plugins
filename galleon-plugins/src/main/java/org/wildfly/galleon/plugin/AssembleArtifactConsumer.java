@@ -49,7 +49,8 @@ class AssembleArtifactConsumer implements Utils.ArtifactResourceConsumer {
         this.log = log;
     }
 
-    public void assemble(MavenArtifact artifact) throws IOException, ProvisioningException {
+    public void assemble(MavenArtifact artifact, Map<String, String> mergedArtifactVersions) throws IOException, ProvisioningException {
+        System.out.println("ASSEMBLING " + artifact);
         Path tmp = runtime.getTmpPath().resolve("assemble_src").resolve(artifact.getGroupId()).resolve(artifact.getArtifactId());
         Path tmpTarget = runtime.getTmpPath().resolve("assemble_target").resolve(artifact.getGroupId()).resolve(artifact.getArtifactId());
         Files.createDirectories(tmp);
@@ -59,6 +60,13 @@ class AssembleArtifactConsumer implements Utils.ArtifactResourceConsumer {
         List<MavenArtifact> dependencies = Utils.retrieveDependencies(mavenPath);
         for (MavenArtifact dependency : dependencies) {
             String version = dependency.getVersion();
+            String key = dependency.getGroupId() + ':' + dependency.getArtifactId() + ( dependency.getClassifier() == null || dependency.getClassifier().isEmpty() ?
+                    "" : "::" + dependency.getClassifier() );
+            String value = mergedArtifactVersions.get(key);
+            if(value == null) {
+                System.err.println("ARTIFACT " + key + " is shaded but unknown, skipping it!");
+                continue;
+            }
             artifactResolver.resolve(dependency);
             if (!dependency.getVersion().equals(version)) {
                 log.print("JAR " + artifact.getPath().getFileName() + ". Dependency " + dependency.getGroupId() + ":" + dependency.getArtifactId() + " has been upgraded from " + version + " to " + dependency.getVersion());
