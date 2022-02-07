@@ -88,6 +88,7 @@ import org.jboss.galleon.universe.maven.repo.MavenRepoManager;
 import org.jboss.galleon.util.IoUtils;
 import org.jboss.galleon.util.CollectionUtils;
 import org.jboss.galleon.util.ZipUtils;
+import org.wildfly.galleon.plugin.config.AssembleShadedArtifact;
 import org.wildfly.galleon.plugin.config.CopyArtifact;
 import org.wildfly.galleon.plugin.config.CopyPath;
 import org.wildfly.galleon.plugin.config.DeletePath;
@@ -683,15 +684,19 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             throw new ProvisioningException(Errors.pathDoesNotExist(configGenJar));
         }
 
-        final URL[] cp = new URL[3];
+        URL[] cp;
+        List<URL> urls = new ArrayList<>();
         try {
-            cp[0] = configGenJar.toUri().toURL();
-            MavenArtifact artifact = Utils.toArtifactCoords(mergedArtifactVersions, "org.jboss.modules:jboss-modules", false);
+            urls.add(configGenJar.toUri().toURL());
+            MavenArtifact artifact = Utils.toArtifactCoords(mergedArtifactVersions,
+                    "org.wildfly.core:wildfly-cli::shaded-model:xml", false);
             artifactResolver.resolve(artifact);
-            cp[1] = artifact.getPath().toUri().toURL();
-            artifact = Utils.toArtifactCoords(mergedArtifactVersions, "org.wildfly.core:wildfly-cli::client", false);
-            artifactResolver.resolve(artifact);
-            cp[2] = artifact.getPath().toUri().toURL();
+            ShadedModel model = new ShadedModel(artifact, runtime, artifactResolver, log, mergedArtifactVersions);
+            for(MavenArtifact a : model.getArtifacts()) {
+                urls.add(a.getPath().toUri().toURL());
+            }
+            cp = new URL[urls.size()];
+            cp = urls.toArray(cp);
         } catch (IOException e) {
             throw new ProvisioningException("Failed to init classpath for " + runtime.getStagedDir(), e);
         }
@@ -933,6 +938,23 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             if (Files.exists(schemaSrc)) {
                 ZipUtils.copyFromZip(schemaSrc.toAbsolutePath(), targetSchemasDir);
             }
+        }
+    }
+
+    public void assembleArtifact(AssembleShadedArtifact copyArtifact, PackageRuntime pkg) throws ProvisioningException {
+        final MavenArtifact artifact = Utils.toArtifactCoords(mergedArtifactVersions,
+                copyArtifact.getArtifact(), false);
+        try {
+            log.verbose("Resolving shaded model artifact %s ", artifact);
+            artifactResolver.resolve(artifact);
+            ShadedModel model = new ShadedModel(artifact, runtime, artifactResolver, log, mergedArtifactVersions);
+            String location = copyArtifact.getToLocation();
+            final Path jarTarget = runtime.getStagedDir().resolve(location);
+            Files.createDirectories(jarTarget.getParent());
+            model.buildJar(jarTarget);
+           // XXX TODO EE9 transformation...
+        } catch (IOException e) {
+            throw new ProvisioningException("Failed to copy artifact " + artifact, e);
         }
     }
 
