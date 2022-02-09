@@ -691,7 +691,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             MavenArtifact artifact = Utils.toArtifactCoords(mergedArtifactVersions,
                     "org.wildfly.core:wildfly-cli::shaded-model:xml", false);
             artifactResolver.resolve(artifact);
-            ShadedModel model = new ShadedModel(artifact, runtime, artifactResolver, log, mergedArtifactVersions);
+            ShadedModel model = new ShadedModel(artifact, runtime, artifactResolver, log, mergedArtifactVersions, artifactInstaller);
             for(MavenArtifact a : model.getArtifacts()) {
                 urls.add(a.getPath().toUri().toURL());
             }
@@ -947,12 +947,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         try {
             log.verbose("Resolving shaded model artifact %s ", artifact);
             artifactResolver.resolve(artifact);
-            ShadedModel model = new ShadedModel(artifact, runtime, artifactResolver, log, mergedArtifactVersions);
+            ShadedModel model = new ShadedModel(artifact, runtime, artifactResolver, log, mergedArtifactVersions, artifactInstaller);
             String location = copyArtifact.getToLocation();
             final Path jarTarget = runtime.getStagedDir().resolve(location);
             Files.createDirectories(jarTarget.getParent());
             model.buildJar(jarTarget);
-           // XXX TODO EE9 transformation...
         } catch (IOException e) {
             throw new ProvisioningException("Failed to copy artifact " + artifact, e);
         }

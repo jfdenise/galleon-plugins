@@ -126,9 +126,12 @@ class EE9ArtifactTransformerInstaller extends AbstractEE9ArtifactInstaller {
                 String transformedFileName = getTransformedArtifactFileName(artifact.getVersion(),
                         artifact.getPath().getFileName().toString());
                 path = getRuntime().getTmpPath().resolve(transformedFileName);
-                Files.createDirectories(path);
-                Files.deleteIfExists(path);
-                transform(artifact, path);
+                // From a previous transformation, reuse it.
+                if (!Files.exists(path)) {
+                    Files.createDirectories(path);
+                    Files.deleteIfExists(path);
+                    transform(artifact, path);
+                }
             } else {
                 path = transformedFile;
             }

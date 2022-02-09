@@ -459,9 +459,6 @@ public class Utils {
                                 if(entry.isEmpty()) {
                                     return FileVisitResult.CONTINUE;
                                 }
-                                if(entry.contains("org.jboss.logging")) {
-                                    System.out.println("DEBUG ME");
-                                }
                                 if(!entry.endsWith("/")) {
                                     entry += '/';
                                 }
@@ -479,9 +476,7 @@ public class Utils {
                                 throws IOException {
                                 if (consumer.consume(file)) {
                                     final Path targetPath = target.resolve(zipRoot.relativize(file).toString());
-                                    if ( Files.exists(targetPath)) {
-                                      System.out.println("FILE " + targetPath + " allready exists!!!!");
-                                    } else {
+                                    if ( !Files.exists(targetPath)) {
                                         Files.copy(file, targetPath, StandardCopyOption.REPLACE_EXISTING);
                                     }
                                 }

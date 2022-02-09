@@ -67,6 +67,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
     private final Map<String, String> mergedArtifactVersions;
     private boolean seenManifest;
     private final MavenArtifact shadedModel;
+    private final AbstractArtifactInstaller installer;
 
     public static String getXMLContent(String name, List<Artifact> artifacts, String mainClass, Map<String, String> manifestEntries) {
         StringBuilder builder = new StringBuilder();
@@ -98,12 +99,13 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
     ShadedModel(MavenArtifact shadedModel,
             ProvisioningRuntime runtime,
             WfInstallPlugin.ArtifactResolver artifactResolver,
-            MessageWriter log, Map<String, String> mergedArtifactVersions) throws IOException, ProvisioningDescriptionException {
+            MessageWriter log, Map<String, String> mergedArtifactVersions, AbstractArtifactInstaller installer) throws IOException, ProvisioningDescriptionException {
         this.shadedModel = shadedModel;
         this.runtime = runtime;
         this.artifactResolver = artifactResolver;
         this.log = log;
         this.mergedArtifactVersions = mergedArtifactVersions;
+        this.installer = installer;
         final Builder builder = new Builder(false);
         try (BufferedReader reader = Files.newBufferedReader(shadedModel.getPath(), StandardCharsets.UTF_8)) {
             document = builder.build(reader);
@@ -113,7 +115,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
         rootElement = document.getRootElement();
     }
 
-    List<MavenArtifact> getArtifacts() throws ProvisioningException {
+    List<MavenArtifact> getArtifacts() throws ProvisioningException, IOException {
         List<MavenArtifact> artifacts = new ArrayList<>();
         Element shadedDependencies = rootElement.getFirstChildElement("shaded-dependencies",
                 rootElement.getNamespaceURI());
@@ -122,6 +124,8 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
             Element e = dependencies.get(i);
             MavenArtifact a = Utils.toArtifactCoords(mergedArtifactVersions, e.getValue(), false);
             artifactResolver.resolve(a);
+            Path transformed = installer.installCopiedArtifact(a);
+            a.setPath(transformed);
             artifacts.add(a);
         }
         return artifacts;
