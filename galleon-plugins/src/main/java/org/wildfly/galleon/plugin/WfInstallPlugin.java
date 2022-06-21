@@ -18,6 +18,7 @@ package org.wildfly.galleon.plugin;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -119,6 +120,12 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         void resolve(MavenArtifact artifact) throws ProvisioningException;
     }
 
+    private static final String GALLEON_EULA_CHECK = "galleon.eula.check";
+    private static final String GALLEON_EULA_CHECK_NAME = GALLEON_EULA_CHECK + ".name";
+    private static final String GALLEON_EULA_CHECK_ENV_VAR = GALLEON_EULA_CHECK + ".env.var";
+    private static final String GALLEON_EULA_CHECK_SYS_PROP = GALLEON_EULA_CHECK + ".sys.prop";
+    private static final String GALLEON_EULA_CHECK_VALUE = GALLEON_EULA_CHECK + ".expected.value";
+
     private static final String CONFIG_GEN_METHOD = "generate";
     private static final String CONFIG_GEN_PATH = "wildfly/wildfly-config-gen.jar";
     private static final String CONFIG_GEN_CLASS = "org.wildfly.galleon.plugin.config.generator.WfConfigGenerator";
@@ -145,6 +152,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             .build();
     private static final ProvisioningOption OPTION_JAKARTA_TRANSFORM_ARTIFACTS_VERBOSE = ProvisioningOption.builder("jboss-jakarta-transform-artifacts-verbose")
             .setBooleanValueSet()
+            .build();
+   private static final ProvisioningOption OPTION_ACCEPTED_EULA = ProvisioningOption.builder("accepted-eula")
+            .setPersistent(false)
             .build();
     private static final ProvisioningOption OPTION_OVERRIDDEN_ARTIFACTS = ProvisioningOption.builder("jboss-overridden-artifacts").setPersistent(true).build();
     private ProvisioningRuntime runtime;
@@ -192,7 +202,8 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     protected List<ProvisioningOption> initPluginOptions() {
         return Arrays.asList(OPTION_MVN_DIST, OPTION_DUMP_CONFIG_SCRIPTS,
                 OPTION_FORK_EMBEDDED, OPTION_MVN_REPO, OPTION_JAKARTA_TRANSFORM_ARTIFACTS,
-                OPTION_MVN_PROVISIONING_REPO, OPTION_JAKARTA_TRANSFORM_ARTIFACTS_VERBOSE, OPTION_OVERRIDDEN_ARTIFACTS);
+                OPTION_MVN_PROVISIONING_REPO, OPTION_JAKARTA_TRANSFORM_ARTIFACTS_VERBOSE, OPTION_OVERRIDDEN_ARTIFACTS,
+                OPTION_ACCEPTED_EULA);
     }
 
     public ProvisioningRuntime getRuntime() {
@@ -248,6 +259,24 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         }
         final String value = runtime.getOptionValue(OPTION_JAKARTA_TRANSFORM_ARTIFACTS_VERBOSE);
         return value == null ? true : Boolean.parseBoolean(value);
+    }
+
+    private Set<String> getAcceptedEULA() throws ProvisioningException {
+        if (!runtime.isOptionSet(OPTION_ACCEPTED_EULA)) {
+            return Collections.emptySet();
+        }
+        final String value = runtime.getOptionValue(OPTION_ACCEPTED_EULA);
+        Set<String> accepted = new HashSet<>();
+        if (value != null) {
+            String[] values = value.split(",");
+            for (String v : values) {
+                v = v.trim();
+                if (!v.isEmpty()) {
+                    accepted.add(v);
+                }
+            }
+        }
+        return accepted;
     }
 
     @Override
@@ -347,6 +376,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 }
             }
         }
+        checkEULA();
         // Check that all overridden artifacts are actually known.
         for (String key : overriddenArtifactVersions.keySet()) {
             if (!mergedArtifactVersions.containsKey(key)) {
@@ -1181,5 +1211,77 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     boolean isOverriddenArtifact(MavenArtifact artifact) throws ProvisioningException {
         return Utils.containsArtifact(overriddenArtifactVersions, artifact);
+    }
+
+    private void checkEULA() throws ProvisioningException {
+        Set<String> acceptedWithOption = getAcceptedEULA();
+        for (Entry<ProducerSpec, Map<String, String>> entry : fpTasksProps.entrySet()) {
+            String eula = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK));
+            if (eula != null) {
+                String eulaName = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_NAME));
+                if (eulaName == null) {
+                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK_NAME +
+                            " has not been set in " + entry.getKey() + ", can't accept EULA");
+                }
+                if (acceptedWithOption.contains(eulaName)) {
+                    continue;
+                }
+                boolean accepted = false;
+                String value = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_VALUE));
+                String envVar = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_ENV_VAR));
+                String sysProp = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_SYS_PROP));
+                if (value == null) {
+                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK_VALUE +
+                            " has not been set in " + entry.getKey() + ", can't accept EULA");
+                }
+                if (envVar == null && sysProp == null) {
+                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK_ENV_VAR + " nor " + GALLEON_EULA_CHECK_SYS_PROP
+                            + " have been found , in " + entry.getKey() + ", can't accept EULA");
+                }
+                if (envVar != null) {
+                    String envVal = System.getenv(envVar);
+                    if (envVal != null && envVal.equals(value)) {
+                        accepted = true;
+                    }
+                }
+                if (!accepted) {
+                    if (sysProp != null) {
+                        String propVal = System.getProperty(sysProp);
+                        if (propVal != null && propVal.equals(value)) {
+                            accepted = true;
+                        }
+                    }
+                }
+                if (!accepted) {
+                    throw new LicenseNotAcceptedException(entry.getKey().toString(), eulaName);
+                }
+            } else {
+                // Check that some expected properties are also not set
+                String value = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_VALUE));
+                String envVar = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_ENV_VAR));
+                String sysProp = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_SYS_PROP));
+                String name = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_NAME));
+                if (value != null || envVar != null || sysProp != null || name != null) {
+                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK
+                            + " has not been set in " + entry.getKey() + ", although other EULA checks properties have been set, can't accept EULA");
+                }
+            }
+        }
+    }
+
+    // Remove Java property escaping
+    private static String escapePropertyValue(String val) throws ProvisioningException {
+        if (val == null) {
+            return null;
+        }
+        Properties prop = new Properties();
+        String key = "key";
+        String line = key + "=" + val;
+        try (ByteArrayInputStream stream = new ByteArrayInputStream(line.getBytes())) {
+            prop.load(stream);
+        } catch (IOException ex) {
+            throw new ProvisioningException(ex);
+        }
+        return prop.getProperty(key);
     }
 }
