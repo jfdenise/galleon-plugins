@@ -22,12 +22,14 @@ public class LicenseNotAcceptedException extends ProvisioningException {
 
     private final String name;
     private final String featurePack;
+    private final String eula;
 
-    public LicenseNotAcceptedException(String featurePack, String name) {
+    public LicenseNotAcceptedException(String featurePack, String name, String eula) {
         super("End-user license agreement " + name + " for feature-pack " + featurePack
                 + " has not been accepted.");
         this.featurePack = featurePack;
         this.name = name;
+        this.eula = eula;
     }
 
     public String getFeaturePack() {
@@ -36,5 +38,9 @@ public class LicenseNotAcceptedException extends ProvisioningException {
 
     public String getName() {
         return name;
+    }
+
+    public String getEULA() {
+        return eula;
     }
 }

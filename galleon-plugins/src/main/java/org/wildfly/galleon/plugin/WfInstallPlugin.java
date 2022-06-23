@@ -120,11 +120,12 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         void resolve(MavenArtifact artifact) throws ProvisioningException;
     }
 
-    private static final String GALLEON_EULA_CHECK = "galleon.eula.check";
-    private static final String GALLEON_EULA_CHECK_NAME = GALLEON_EULA_CHECK + ".name";
-    private static final String GALLEON_EULA_CHECK_ENV_VAR = GALLEON_EULA_CHECK + ".env.var";
-    private static final String GALLEON_EULA_CHECK_SYS_PROP = GALLEON_EULA_CHECK + ".sys.prop";
-    private static final String GALLEON_EULA_CHECK_VALUE = GALLEON_EULA_CHECK + ".expected.value";
+    private static final String GALLEON_EULA_CHECK = "galleon.eula.check.";
+    private static final String GALLEON_EULA_CHECK_NAMESPACES = GALLEON_EULA_CHECK + "namespaces";
+    private static final String GALLEON_EULA_CHECK_NAME = GALLEON_EULA_CHECK + "name.";
+    private static final String GALLEON_EULA_CHECK_ENV_VAR = GALLEON_EULA_CHECK + "env.var.";
+    private static final String GALLEON_EULA_CHECK_SYS_PROP = GALLEON_EULA_CHECK + "sys.prop.";
+    private static final String GALLEON_EULA_CHECK_VALUE = GALLEON_EULA_CHECK + "expected.value.";
 
     private static final String CONFIG_GEN_METHOD = "generate";
     private static final String CONFIG_GEN_PATH = "wildfly/wildfly-config-gen.jar";
@@ -1216,54 +1217,73 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private void checkEULA() throws ProvisioningException {
         Set<String> acceptedWithOption = getAcceptedEULA();
         for (Entry<ProducerSpec, Map<String, String>> entry : fpTasksProps.entrySet()) {
-            String eula = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK));
-            if (eula != null) {
-                String eulaName = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_NAME));
-                if (eulaName == null) {
-                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK_NAME +
-                            " has not been set in " + entry.getKey() + ", can't accept EULA");
+            String eulaNamespaces = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_NAMESPACES));
+            if (eulaNamespaces != null) {
+                String[] namespaces = eulaNamespaces.split(",");
+                if (namespaces.length == 0) {
+                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK_NAMESPACES
+                                + "for " + entry.getKey() + " is empty, can't accept EULA");
                 }
-                if (acceptedWithOption.contains(eulaName)) {
-                    continue;
-                }
-                boolean accepted = false;
-                String value = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_VALUE));
-                String envVar = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_ENV_VAR));
-                String sysProp = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_SYS_PROP));
-                if (value == null) {
-                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK_VALUE +
-                            " has not been set in " + entry.getKey() + ", can't accept EULA");
-                }
-                if (envVar == null && sysProp == null) {
-                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK_ENV_VAR + " nor " + GALLEON_EULA_CHECK_SYS_PROP
-                            + " have been found , in " + entry.getKey() + ", can't accept EULA");
-                }
-                if (envVar != null) {
-                    String envVal = System.getenv(envVar);
-                    if (envVal != null && envVal.equals(value)) {
-                        accepted = true;
+                for (String namespace : namespaces) {
+                    namespace = namespace.trim();
+                    if (namespace.isEmpty()) {
+                        continue;
                     }
-                }
-                if (!accepted) {
-                    if (sysProp != null) {
-                        String propVal = System.getProperty(sysProp);
-                        if (propVal != null && propVal.equals(value)) {
+                    String eulaProp = GALLEON_EULA_CHECK + namespace;
+                    String nameProp = GALLEON_EULA_CHECK_NAME + namespace;
+                    String envProp = GALLEON_EULA_CHECK_ENV_VAR + namespace;
+                    String sysPropProp = GALLEON_EULA_CHECK_SYS_PROP + namespace;
+                    String valueProp = GALLEON_EULA_CHECK_VALUE + namespace;
+                    String eulaName = escapePropertyValue(entry.getValue().get(nameProp));
+                    if (eulaName == null) {
+                        throw new ProvisioningException("Invalid feature-pack, " + nameProp
+                                + " has not been set in " + entry.getKey() + ", can't accept EULA");
+                    }
+                    if (acceptedWithOption.contains(eulaName)) {
+                        continue;
+                    }
+                    String eula = escapePropertyValue(entry.getValue().get(eulaProp));
+                    if (eula == null) {
+                        throw new ProvisioningException("Invalid feature-pack, " + eulaProp
+                                + " has not been set in " + entry.getKey() + ", can't accept EULA");
+                    }
+                    String value = escapePropertyValue(entry.getValue().get(valueProp));
+                    if (value == null) {
+                        throw new ProvisioningException("Invalid feature-pack, " + valueProp
+                                + " has not been set in " + entry.getKey() + ", can't accept EULA");
+                    }
+                    boolean accepted = false;
+                    String envVar = escapePropertyValue(entry.getValue().get(envProp));
+                    String sysProp = escapePropertyValue(entry.getValue().get(sysPropProp));
+                    if (envVar == null && sysProp == null) {
+                        throw new ProvisioningException("Invalid feature-pack, " + envProp + " nor " + sysPropProp
+                                + " have been found , in " + entry.getKey() + ", can't accept EULA");
+                    }
+                    if (envVar != null) {
+                        String envVal = System.getenv(envVar);
+                        if (envVal != null && envVal.equals(value)) {
                             accepted = true;
                         }
                     }
-                }
-                if (!accepted) {
-                    throw new LicenseNotAcceptedException(entry.getKey().toString(), eulaName);
+                    if (!accepted) {
+                        if (sysProp != null) {
+                            String propVal = System.getProperty(sysProp);
+                            if (propVal != null && propVal.equals(value)) {
+                                accepted = true;
+                            }
+                        }
+                    }
+                    if (!accepted) {
+                        throw new LicenseNotAcceptedException(entry.getKey().toString(), eulaName, eula);
+                    }
                 }
             } else {
                 // Check that some expected properties are also not set
-                String value = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_VALUE));
-                String envVar = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_ENV_VAR));
-                String sysProp = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_SYS_PROP));
-                String name = escapePropertyValue(entry.getValue().get(GALLEON_EULA_CHECK_NAME));
-                if (value != null || envVar != null || sysProp != null || name != null) {
-                    throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK
+                for(String k : entry.getValue().keySet()) {
+                    if (k.startsWith(GALLEON_EULA_CHECK)) {
+                        throw new ProvisioningException("Invalid feature-pack, " + GALLEON_EULA_CHECK
                             + " has not been set in " + entry.getKey() + ", although other EULA checks properties have been set, can't accept EULA");
+                    }
                 }
             }
         }
