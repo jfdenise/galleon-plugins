@@ -61,7 +61,6 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 
-import nu.xom.Elements;
 import org.jboss.galleon.Errors;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
@@ -87,13 +86,13 @@ import org.jboss.galleon.universe.maven.repo.MavenRepoManager;
 import org.jboss.galleon.util.IoUtils;
 import org.jboss.galleon.util.CollectionUtils;
 import org.jboss.galleon.util.ZipUtils;
+import org.w3c.dom.Element;
 import org.wildfly.galleon.plugin.config.CopyArtifact;
 import org.wildfly.galleon.plugin.config.CopyPath;
 import org.wildfly.galleon.plugin.config.DeletePath;
 import org.wildfly.galleon.plugin.config.ExampleFpConfigs;
 import org.wildfly.galleon.plugin.config.LineEndingsTask;
 import org.wildfly.galleon.plugin.config.XslTransform;
-import org.wildfly.galleon.plugin.transformer.JakartaTransformer;
 
 /**
  * WildFly install plugin. Handles all WildFly specifics that occur during provisioning.
@@ -374,53 +373,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
         // We must create resolver and installer at this point, prior to process the packges.
         // The CopyArtifact tasks could need the resolver and installer we are instantiating there.
-        boolean transformableFeaturePack = Boolean.valueOf(mergedTaskProps.getOrDefault(JakartaTransformer.TRANSFORM_ARTIFACTS, "false"));
-        if (!transformableFeaturePack) {
+        boolean transformableFeaturePack = false;
             artifactResolver = this::resolveMaven;
             artifactInstaller = new SimpleArtifactInstaller(artifactResolver, generatedMavenRepo);
-        } else {
-            String jakartaTransformSuffix = mergedTaskProps.getOrDefault(JAKARTA_TRANSFORM_SUFFIX_KEY, "");
-            boolean jakartaTransformVerbose = isVerboseTransformation();
-            final String jakartaConfigsDir = mergedTaskProps.get(JakartaTransformer.TRANSFORM_CONFIGS_DIR);
-            Path jakartaTransformConfigsDir = null;
-            if (jakartaConfigsDir != null) {
-                jakartaTransformConfigsDir = Paths.get(jakartaConfigsDir);
-            }
-            JakartaTransformer.LogHandler logHandler = new JakartaTransformer.LogHandler() {
-                @Override
-                public void print(String format, Object... args) {
-                    log.print(format, args);
-                }
-            };
-            if (isTransformationEnabled()) {
-                // Artifacts are transformed, no provisioning repository can be set
-                if (provisioningMavenRepo != null) {
-                    throw new ProvisioningException("Jakarta transformation is enabled, option " +
-                            OPTION_MVN_PROVISIONING_REPO.getName() + " can't be set.");
-                }
-                if (isThinServer() && generatedMavenRepo == null) {
-                    throw new ProvisioningException("Jakarta transformation is enabled for thin server, option " +
-                            OPTION_MVN_REPO.getName() + " is required.");
-                }
-                artifactResolver = this::resolveMaven;
-                artifactInstaller = new EE9ArtifactTransformerInstaller(artifactResolver, generatedMavenRepo, transformExcluded, this,
-                        jakartaTransformSuffix, jakartaTransformConfigsDir, logHandler, jakartaTransformVerbose, runtime);
-            } else {
-                // Disabled transformation, we must have a provisioning repository
-                if (provisioningMavenRepo == null) {
-                    throw new ProvisioningException("Jakarta transformation is disabled, " +
-                            OPTION_MVN_PROVISIONING_REPO.getName() +" must be set");
-                }
-                artifactResolver = new ArtifactResolver() {
-                    @Override
-                    public void resolve(MavenArtifact artifact) throws ProvisioningException {
-                        resolveMaven(artifact, jakartaTransformSuffix);
-                    }
-                };
-                artifactInstaller = new EE9ArtifactInstaller(artifactResolver, generatedMavenRepo, transformExcluded, this,
-                        jakartaTransformSuffix, jakartaTransformConfigsDir, logHandler, jakartaTransformVerbose, runtime, provisioningMavenRepo);
-            }
-        }
 
         final ProvisioningLayoutFactory layoutFactory = runtime.getLayout().getFactory();
         pkgProgressTracker = layoutFactory.getProgressTracker(ProvisioningLayoutFactory.TRACK_PACKAGES);
@@ -589,7 +544,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             return;
         }
 
-        final Elements artifacts = moduleTemplate.getArtifacts();
+        final List<Element> artifacts = moduleTemplate.getArtifacts();
         if (artifacts == null) {
             return;
         }

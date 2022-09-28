@@ -41,40 +41,22 @@
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>transformer</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.jboss</groupId>
       <artifactId>jandex</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.jboss.galleon</groupId>
       <artifactId>galleon-core</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.jboss.galleon</groupId>
       <artifactId>galleon-maven-universe</artifactId>
       <scope>provided</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.wildfly.core</groupId>
-      <artifactId>wildfly-launcher</artifactId>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>xom</groupId>
-      <artifactId>xom</artifactId>
-      <scope>compile</scope>
-      <exclusions>
-        <exclusion>
-          <groupId>xalan</groupId>
-          <artifactId>xalan</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>xerces</groupId>
-          <artifactId>xercesImpl</artifactId>
-        </exclusion>
-      </exclusions>
     </dependency>
 
     <dependency>

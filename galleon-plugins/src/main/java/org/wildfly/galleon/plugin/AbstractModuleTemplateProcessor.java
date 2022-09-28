@@ -18,14 +18,13 @@ package org.wildfly.galleon.plugin;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
-import nu.xom.Attribute;
-import nu.xom.Element;
-import nu.xom.Elements;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.universe.maven.MavenArtifact;
 import org.jboss.galleon.universe.maven.MavenUniverseException;
+import org.w3c.dom.Element;
 
 /**
  * Abstract template processor that implements logic common to fat and thin
@@ -45,7 +44,6 @@ abstract class AbstractModuleTemplateProcessor {
         boolean jandex;
         String coordsStr;
         private MavenArtifact artifact;
-        private final Attribute attribute;
 
         ModuleArtifact(Element element,
                        Map<String, String> versionProps,
@@ -58,8 +56,7 @@ abstract class AbstractModuleTemplateProcessor {
             this.element = element;
             this.channelArtifactResolution = channelArtifactResolution;
             assert element.getLocalName().equals("artifact");
-            attribute = element.getAttribute("name");
-            coordsStr = attribute.getValue();
+            coordsStr = element.getAttribute("name");
             if (coordsStr.startsWith("${") && coordsStr.endsWith("}")) {
                 coordsStr = coordsStr.substring(2, coordsStr.length() - 1);
                 final int optionsIndex = coordsStr.indexOf('?');
@@ -107,13 +104,13 @@ abstract class AbstractModuleTemplateProcessor {
         }
 
         void updateFatArtifact(String finalFileName) {
-            element.setLocalName("resource-root");
-            attribute.setLocalName("path");
-            attribute.setValue(finalFileName);
+            element.getOwnerDocument().renameNode(element, element.getNamespaceURI(),"resource-root");
+            element.removeAttribute("name");
+            element.setAttribute("path", finalFileName);
         }
 
         void updateThinArtifact(String coords) {
-            attribute.setValue(coords);
+            element.setAttribute("name", coords);
         }
 
     }
@@ -160,9 +157,9 @@ abstract class AbstractModuleTemplateProcessor {
 
     void processModuleVersion() throws ProvisioningException {
         // replace version, if any
-        final Attribute versionAttribute = template.getRootElement().getAttribute("version");
+        final String versionAttribute = template.getRootElement().getAttribute("version");
         if (versionAttribute != null) {
-            final String versionExpr = versionAttribute.getValue();
+            final String versionExpr = versionAttribute;
             if (versionExpr.startsWith("${") && versionExpr.endsWith("}")) {
                 final String exprBody = versionExpr.substring(2, versionExpr.length() - 1);
                 final int optionsIndex = exprBody.indexOf('?');
@@ -174,14 +171,14 @@ abstract class AbstractModuleTemplateProcessor {
                 }
                 final MavenArtifact artifact = Utils.toArtifactCoords(versionProps, artifactName, false, channelArtifactResolution);
                 if (artifact != null) {
-                    versionAttribute.setValue(artifact.getVersion());
+                    template.getRootElement().setAttribute("version", artifact.getVersion());
                 }
             }
         }
     }
 
     void processArtifacts() throws IOException, MavenUniverseException, ProvisioningException {
-        Elements artifacts = template.getArtifacts();
+        List<Element> artifacts = template.getArtifacts();
         if (artifacts == null) {
             return;
         }
@@ -193,6 +190,7 @@ abstract class AbstractModuleTemplateProcessor {
                 processArtifact(moduleArtifact);
                 plugin.processSchemas(moduleArtifact.getMavenArtifact().getGroupId(), artifactPath);
             }
+             System.out.println("3 LENGTH " + artifacts.size());
         }
     }
 

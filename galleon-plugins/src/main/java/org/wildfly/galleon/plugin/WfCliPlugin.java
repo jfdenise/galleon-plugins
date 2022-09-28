@@ -16,9 +16,7 @@
  */
 package org.wildfly.galleon.plugin;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import static java.nio.file.FileVisitResult.CONTINUE;
 import java.nio.file.Files;
@@ -31,12 +29,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-import nu.xom.Attribute;
-import nu.xom.Builder;
-import nu.xom.Document;
-import nu.xom.Element;
-import nu.xom.Elements;
-import nu.xom.ParsingException;
 import org.jboss.galleon.ProvisioningDescriptionException;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.plugin.CliPlugin;
@@ -55,22 +47,7 @@ public class WfCliPlugin implements CliPlugin {
     @Override
     public CustomPackageContent handlePackageContent(PackageRuntime pkg)
             throws ProvisioningException, ProvisioningDescriptionException, IOException {
-        Path modulePath = pkg.getContentDir().getParent().resolve(MODULE_PATH);
-        if (Files.exists(modulePath)) {
-            Path props = pkg.getFeaturePackRuntime().getResource(VERSIONS_PATH);
-            Map<String, String> variables = getVariables(props);
-            List<String> artifacts = new ArrayList<>();
-            String moduleVersion;
-            try {
-                moduleVersion = parseModuleDescriptor(variables, pkg.getContentDir(),
-                        pkg.getSpec(), artifacts);
-            } catch (ParsingException ex) {
-                throw new ProvisioningException(ex);
-            }
-            return new ModuleContent(buildInfo(artifacts, moduleVersion));
-        } else {
-            return null;
-        }
+        return null;
     }
 
     private class ModuleContent implements CustomPackageContent {
@@ -88,7 +65,7 @@ public class WfCliPlugin implements CliPlugin {
     }
 
     private static String parseModuleDescriptor(Map<String, String> variables,
-            Path contentDir, PackageSpec spec, List<String> artifacts) throws IOException, ProvisioningException, ParsingException {
+            Path contentDir, PackageSpec spec, List<String> artifacts) throws IOException, ProvisioningException {
         Path modulePath = contentDir.getParent().resolve(MODULE_PATH);
         List<Path> moduleHolder = new ArrayList<>();
         String moduleVersion = null;
@@ -121,62 +98,7 @@ public class WfCliPlugin implements CliPlugin {
                 return CONTINUE;
             }
         });
-        if (moduleHolder.isEmpty()) {
-            throw new ProvisioningException("No module descriptor for " + spec.getName());
-        }
-        Path p = moduleHolder.get(0);
-        final Builder builder = new Builder(false);
-        final Document document;
-        try (BufferedReader reader = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
-            document = builder.build(reader);
-        }
-        final Element rootElement = document.getRootElement();
-        final Attribute versionAttribute = rootElement.getAttribute("version");
-        if (versionAttribute != null) {
-            final String versionExpr = versionAttribute.getValue();
-            if (versionExpr.startsWith("${") && versionExpr.endsWith("}")) {
-                final String exprBody = versionExpr.substring(2, versionExpr.length() - 1);
-                final int optionsIndex = exprBody.indexOf('?');
-                final String artifactName;
-                if (optionsIndex > 0) {
-                    artifactName = exprBody.substring(0, optionsIndex);
-                } else {
-                    artifactName = exprBody;
-                }
-                String vers = variables.get(artifactName);
-                if (vers != null) {
-                    int i = vers.lastIndexOf(":");
-                    if (i > 0) {
-                        vers = vers.substring(i + 1);
-                    }
-                    moduleVersion = vers;
-                }
-            }
-        }
-        final Element resourcesElement = rootElement.getFirstChildElement("resources", rootElement.getNamespaceURI());
-        if (resourcesElement != null) {
-            final Elements artfs = resourcesElement.getChildElements("artifact", rootElement.getNamespaceURI());
-            final int artifactCount = artfs.size();
-            for (int i = 0; i < artifactCount; i++) {
-                final Element element = artfs.get(i);
-                assert element.getLocalName().equals("artifact");
-                final Attribute attribute = element.getAttribute("name");
-                final String nameExpr = attribute.getValue();
-                if (nameExpr.startsWith("${") && nameExpr.endsWith("}")) {
-                    final String exprBody = nameExpr.substring(2, nameExpr.length() - 1);
-                    final int optionsIndex = exprBody.indexOf('?');
-                    final String artifactName;
-                    if (optionsIndex >= 0) {
-                        artifactName = exprBody.substring(0, optionsIndex);
-                    } else {
-                        artifactName = exprBody;
-                    }
-                    final String resolved = variables.get(artifactName);
-                    artifacts.add(resolved);
-                }
-            }
-        }
-        return moduleVersion;
+        return null;
     }
 
     private static String buildInfo(List<String> artifacts, String moduleVersion) {

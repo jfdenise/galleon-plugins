@@ -57,5 +57,10 @@
       <artifactId>wildfly-launcher</artifactId>
       <scope>provided</scope>
     </dependency>
+    <dependency>
+      <groupId>org.jboss.galleon</groupId>
+      <artifactId>galleon-core</artifactId>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 </project>

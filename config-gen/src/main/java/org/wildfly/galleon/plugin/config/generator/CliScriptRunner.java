@@ -36,10 +36,37 @@ import org.wildfly.core.launcher.CliCommandBuilder;
  */
 public class CliScriptRunner {
 
+    private static final String CLI_COMMAND_BUILDER_CLASS = "org.wildfly.core.launcher.CliCommandBuilder";
+    private static final String CLI_COMMAND_BUILDER_OF_METHOD = "of";
+    private static final String CLI_COMMAND_BUILDER_ASMODULARLAUNCHER_METHOD = "asModularLauncher";
     public static void runCliScript(Path installHome, Path script, MessageWriter messageWriter) throws ProvisioningException {
-        final CliCommandBuilder builder = CliCommandBuilder
-                .of(installHome)
-                .addCliArgument("--no-operation-validation")
+        System.out.println("HEY!!!!!!");
+        // We can be in a case where the Launcher API is older and doesn't contain asModularLauncher.
+        // This occurs if the tooling in use (eg: wildfly-maven-plugin has an older version of
+        // Need to check for the methods using reflection
+//        Class<?> clazz;
+//        try {
+//            clazz = Class.forName(CLI_COMMAND_BUILDER_CLASS);
+//        } catch (ClassNotFoundException ex) {
+//            throw new ProvisioningException(ex);
+//        }
+//        Method method = null;
+//        try {
+//            method = clazz.getMethod(CLI_COMMAND_BUILDER_OF_METHOD, Path.class);
+//        } catch (NoSuchMethodException ex) {
+//            try {
+//                method = clazz.getMethod(CLI_COMMAND_BUILDER_ASMODULARLAUNCHER_METHOD, Path.class);
+//            } catch (NoSuchMethodException ex2) {
+//                throw new ProvisioningException(ex2);
+//            }
+//        }
+//        CliCommandBuilder builder;
+//        try {
+//            builder = (CliCommandBuilder) method.invoke(null, installHome);
+//        } catch (InvocationTargetException | IllegalAccessException ex) {
+//            throw new ProvisioningException(ex);
+//        }
+        CliCommandBuilder builder = CliCommandBuilder.asModularLauncher(installHome).addCliArgument("--no-operation-validation")
                 .addCliArgument("--echo-command")
                 .addCliArgument("--file=" + script);
         List<String> arguments = builder.build();
