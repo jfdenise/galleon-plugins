@@ -16,9 +16,8 @@
  */
 package org.wildfly.galleon.plugin;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
 import java.nio.file.FileVisitResult;
 import static java.nio.file.FileVisitResult.CONTINUE;
 import java.nio.file.Files;
@@ -31,17 +30,18 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-import nu.xom.Attribute;
-import nu.xom.Builder;
-import nu.xom.Document;
-import nu.xom.Element;
-import nu.xom.Elements;
-import nu.xom.ParsingException;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import org.jboss.galleon.ProvisioningDescriptionException;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.plugin.CliPlugin;
 import org.jboss.galleon.runtime.PackageRuntime;
 import org.jboss.galleon.spec.PackageSpec;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 /**
  *
@@ -60,13 +60,8 @@ public class WfCliPlugin implements CliPlugin {
             Path props = pkg.getFeaturePackRuntime().getResource(VERSIONS_PATH);
             Map<String, String> variables = getVariables(props);
             List<String> artifacts = new ArrayList<>();
-            String moduleVersion;
-            try {
-                moduleVersion = parseModuleDescriptor(variables, pkg.getContentDir(),
+            String moduleVersion = parseModuleDescriptor(variables, pkg.getContentDir(),
                         pkg.getSpec(), artifacts);
-            } catch (ParsingException ex) {
-                throw new ProvisioningException(ex);
-            }
             return new ModuleContent(buildInfo(artifacts, moduleVersion));
         } else {
             return null;
@@ -88,7 +83,7 @@ public class WfCliPlugin implements CliPlugin {
     }
 
     private static String parseModuleDescriptor(Map<String, String> variables,
-            Path contentDir, PackageSpec spec, List<String> artifacts) throws IOException, ProvisioningException, ParsingException {
+            Path contentDir, PackageSpec spec, List<String> artifacts) throws IOException, ProvisioningException {
         Path modulePath = contentDir.getParent().resolve(MODULE_PATH);
         List<Path> moduleHolder = new ArrayList<>();
         String moduleVersion = null;
@@ -125,15 +120,18 @@ public class WfCliPlugin implements CliPlugin {
             throw new ProvisioningException("No module descriptor for " + spec.getName());
         }
         Path p = moduleHolder.get(0);
-        final Builder builder = new Builder(false);
-        final Document document;
-        try (BufferedReader reader = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
-            document = builder.build(reader);
+                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        Document document;
+        try (InputStream reader = Files.newInputStream(p)) {
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            document = builder.parse(reader);
+        } catch (ParserConfigurationException | SAXException e) {
+            throw new IOException("Failed to parse document", e);
         }
-        final Element rootElement = document.getRootElement();
-        final Attribute versionAttribute = rootElement.getAttribute("version");
-        if (versionAttribute != null) {
-            final String versionExpr = versionAttribute.getValue();
+        final Element rootElement = document.getDocumentElement();
+        final String versionExpr = rootElement.getAttribute("version");
+        if (versionExpr != null) {
             if (versionExpr.startsWith("${") && versionExpr.endsWith("}")) {
                 final String exprBody = versionExpr.substring(2, versionExpr.length() - 1);
                 final int optionsIndex = exprBody.indexOf('?');
@@ -153,15 +151,15 @@ public class WfCliPlugin implements CliPlugin {
                 }
             }
         }
-        final Element resourcesElement = rootElement.getFirstChildElement("resources", rootElement.getNamespaceURI());
-        if (resourcesElement != null) {
-            final Elements artfs = resourcesElement.getChildElements("artifact", rootElement.getNamespaceURI());
-            final int artifactCount = artfs.size();
+        final NodeList resourcesElement =  rootElement.getElementsByTagNameNS(rootElement.getNamespaceURI(), "resources");
+        if (resourcesElement != null && resourcesElement.getLength() > 0) {
+            Element elem = (Element) resourcesElement.item(0);
+            NodeList artfs = elem.getElementsByTagNameNS(rootElement.getNamespaceURI(), "artifact");
+            final int artifactCount = artfs.getLength();
             for (int i = 0; i < artifactCount; i++) {
-                final Element element = artfs.get(i);
+                final Element element = (Element) artfs.item(i);
                 assert element.getLocalName().equals("artifact");
-                final Attribute attribute = element.getAttribute("name");
-                final String nameExpr = attribute.getValue();
+                final String nameExpr = element.getAttribute("name");
                 if (nameExpr.startsWith("${") && nameExpr.endsWith("}")) {
                     final String exprBody = nameExpr.substring(2, nameExpr.length() - 1);
                     final int optionsIndex = exprBody.indexOf('?');
