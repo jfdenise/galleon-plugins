@@ -57,7 +57,6 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 
-import nu.xom.Elements;
 import org.jboss.galleon.Errors;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
@@ -101,7 +100,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     }
 
     private static final String CONFIG_GEN_METHOD = "generate";
-    private static final String CONFIG_GEN_PATH = "wildfly/wildfly-config-gen.jar";
+    static final String CONFIG_GEN_PATH = "wildfly/wildfly-config-gen.jar";
     private static final String CONFIG_GEN_CLASS = "org.wildfly.galleon.plugin.config.generator.WfConfigGenerator";
     private static final String CLI_SCRIPT_RUNNER_CLASS = "org.wildfly.galleon.plugin.config.generator.CliScriptRunner";
     private static final String CLI_SCRIPT_RUNNER_METHOD = "runCliScript";
@@ -431,13 +430,13 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         final Path moduleTemplateFile = pkg.getResource(WfConstants.PM, WfConstants.WILDFLY, WfConstants.MODULE).resolve(moduleXmlRelativePath);
         final Path targetPath = runtime.getStagedDir().resolve(moduleXmlRelativePath.toString());
         final Map<String, String> versionProps = fpArtifactVersions.get(pkg.getFeaturePackRuntime().getFPID().getProducer());
-        ModuleTemplate moduleTemplate = new ModuleTemplate(pkg, moduleTemplateFile, targetPath);
+        ModuleTemplate moduleTemplate = new ModuleTemplate(this, pkg, moduleTemplateFile, targetPath);
         moduleTemplateCache.put(moduleTemplateFile, moduleTemplate);
         if (!moduleTemplate.isModule()) {
             return;
         }
 
-        final Elements artifacts = moduleTemplate.getArtifacts();
+        final List<XMLElement> artifacts = moduleTemplate.getArtifacts();
         if (artifacts == null) {
             return;
         }
@@ -812,7 +811,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         if (moduleTemplateCache.containsKey(moduleTemplateFile)) {
             moduleTemplate = moduleTemplateCache.get(moduleTemplateFile);
         } else {
-            moduleTemplate = new ModuleTemplate(pkg, moduleTemplateFile, targetPath);
+            moduleTemplate = new ModuleTemplate(this, pkg, moduleTemplateFile, targetPath);
         }
 
         if (!moduleTemplate.isModule()) {
@@ -1010,5 +1009,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     boolean isOverriddenArtifact(MavenArtifact artifact) throws ProvisioningException {
         return Utils.containsArtifact(overriddenArtifactVersions, artifact);
+    }
+
+    MavenArtifact retrieveMavenArtifact(String coordinates) throws ProvisioningException {
+        return Utils.toArtifactCoords(mergedArtifactVersions, coordinates, false, channelArtifactResolution);
     }
 }

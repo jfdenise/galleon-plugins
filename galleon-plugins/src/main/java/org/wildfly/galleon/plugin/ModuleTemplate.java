@@ -16,19 +16,10 @@
  */
 package org.wildfly.galleon.plugin;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import nu.xom.Builder;
-import nu.xom.Document;
-import nu.xom.Element;
-import nu.xom.Elements;
-import nu.xom.ParsingException;
-import nu.xom.Serializer;
-import org.jboss.galleon.ProvisioningDescriptionException;
+import java.util.List;
+import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.runtime.PackageRuntime;
 
 /**
@@ -38,28 +29,25 @@ import org.jboss.galleon.runtime.PackageRuntime;
  */
 class ModuleTemplate {
 
-    private final Element rootElement;
-    private final Document document;
+    private final XMLElement rootElement;
+    private final XMLDocument document;
+    private final XMLProvider provider;
     private final Path targetPath;
 
-    ModuleTemplate(PackageRuntime pkg, Path moduleTemplate, Path targetPath) throws IOException, ProvisioningDescriptionException {
-        final Builder builder = new Builder(false);
-        try (BufferedReader reader = Files.newBufferedReader(moduleTemplate, StandardCharsets.UTF_8)) {
-            document = builder.build(reader);
-        } catch (ParsingException e) {
-            throw new IOException("Failed to parse document", e);
-        }
+    ModuleTemplate(WfInstallPlugin plugin, PackageRuntime pkg, Path moduleTemplate, Path targetPath) throws IOException, ProvisioningException {
+        provider = XMLProvider.buildXMLProvider(plugin, moduleTemplate);
+        document = provider.getDocument();
         rootElement = document.getRootElement();
         this.targetPath = targetPath;
     }
 
-    Element getRootElement() {
+    XMLElement getRootElement() {
         return rootElement;
     }
 
-    Elements getArtifacts() {
-        Elements artifacts = null;
-        final Element resourcesElement = rootElement.getFirstChildElement("resources", rootElement.getNamespaceURI());
+    List<XMLElement> getArtifacts() {
+        List<XMLElement> artifacts = null;
+        final XMLElement resourcesElement = rootElement.getFirstChildElement("resources", rootElement.getNamespaceURI());
         if (resourcesElement != null) {
             artifacts = resourcesElement.getChildElements("artifact", rootElement.getNamespaceURI());
         }
@@ -71,18 +59,7 @@ class ModuleTemplate {
                 || rootElement.getLocalName().equals("module-alias");
     }
 
-    void store() throws IOException {
-        // now serialize the result
-        try (OutputStream outputStream = Files.newOutputStream(targetPath)) {
-            new Serializer(outputStream).write(document);
-        } catch (Throwable t) {
-            try {
-                Files.deleteIfExists(targetPath);
-            } catch (Throwable t2) {
-                t2.addSuppressed(t);
-                throw t2;
-            }
-            throw t;
-        }
+    void store() throws IOException, ProvisioningException {
+        provider.store(targetPath);
     }
 }

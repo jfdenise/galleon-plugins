@@ -19,10 +19,19 @@ package org.wildfly.galleon.plugin;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import org.jboss.galleon.Errors;
+import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
+import org.jboss.galleon.universe.maven.MavenArtifact;
 import org.jboss.galleon.universe.maven.MavenUniverseException;
+import static org.wildfly.galleon.plugin.WfInstallPlugin.CONFIG_GEN_PATH;
 
 /**
  * A Template processor that process templates when provisioning fat server. In
@@ -51,11 +60,45 @@ class FatModuleTemplateProcessor extends AbstractModuleTemplateProcessor {
             final File target = new File(getTargetDir().toFile(),
                     new StringBuilder().append(artifactFileName.substring(0, lastDot)).append("-jandex")
                             .append(artifactFileName.substring(lastDot)).toString());
-            JandexIndexer.createIndex(artifactPath.toFile(), new FileOutputStream(target), getLog());
+            index(artifactPath.toFile(), new FileOutputStream(target), getLog());
             finalFileName = target.getName();
         } else {
             finalFileName = getInstaller().installArtifactFat(artifact.getMavenArtifact(), getTargetDir());
         }
         artifact.updateFatArtifact(finalFileName);
+    }
+
+    void index(File jarFile, OutputStream target, MessageWriter log) throws ProvisioningException {
+        final URL[] cp = new URL[2];
+        try {
+            final Path configGenJar = getPlugin().getRuntime().getResource(CONFIG_GEN_PATH);
+            if (!Files.exists(configGenJar)) {
+                throw new ProvisioningException(Errors.pathDoesNotExist(configGenJar));
+            }
+            MavenArtifact artifact;
+            try {
+                artifact = getPlugin().retrieveMavenArtifact("io.smallrye:jandex");
+            } catch(ProvisioningException ex) {
+                //Fallback on older dependency
+                artifact = getPlugin().retrieveMavenArtifact("org.jboss:jandex");
+            }
+            getPlugin().resolveMaven(artifact);
+            cp[0] = configGenJar.toUri().toURL();
+            cp[1] = artifact.getPath().toUri().toURL();
+        } catch (IOException e) {
+            throw new ProvisioningException("Failed to init jandex classpath ", e);
+        }
+        final ClassLoader originalCl = Thread.currentThread().getContextClassLoader();
+        final URLClassLoader jandexCl = new URLClassLoader(cp, originalCl);
+        Thread.currentThread().setContextClassLoader(jandexCl);
+        try {
+            final Class<?> jandexIndexerCls = jandexCl.loadClass("org.wildfly.galleon.plugin.config.generator.Indexer");
+            final Method m = jandexIndexerCls.getMethod("createIndex", File.class, OutputStream.class, MessageWriter.class);
+            m.invoke(null, jarFile, target, log);
+        } catch (Throwable e) {
+            throw new ProvisioningException("Failed to initialize jandex ", e);
+        } finally {
+            Thread.currentThread().setContextClassLoader(originalCl);
+        }
     }
 }

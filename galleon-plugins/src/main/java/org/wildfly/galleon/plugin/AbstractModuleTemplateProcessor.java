@@ -18,10 +18,8 @@ package org.wildfly.galleon.plugin;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
-import nu.xom.Attribute;
-import nu.xom.Element;
-import nu.xom.Elements;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.universe.maven.MavenArtifact;
@@ -37,7 +35,7 @@ abstract class AbstractModuleTemplateProcessor {
 
     static class ModuleArtifact {
 
-        private final Element element;
+        private final XMLElement element;
         private final Map<String, String> versionProps;
         private final MessageWriter log;
         private final AbstractArtifactInstaller installer;
@@ -45,9 +43,9 @@ abstract class AbstractModuleTemplateProcessor {
         boolean jandex;
         String coordsStr;
         private MavenArtifact artifact;
-        private final Attribute attribute;
+        private final XMLAttribute attribute;
 
-        ModuleArtifact(Element element,
+        ModuleArtifact(XMLElement element,
                        Map<String, String> versionProps,
                        MessageWriter log,
                        AbstractArtifactInstaller installer,
@@ -160,7 +158,7 @@ abstract class AbstractModuleTemplateProcessor {
 
     void processModuleVersion() throws ProvisioningException {
         // replace version, if any
-        final Attribute versionAttribute = template.getRootElement().getAttribute("version");
+        final XMLAttribute versionAttribute = template.getRootElement().getAttribute("version");
         if (versionAttribute != null) {
             final String versionExpr = versionAttribute.getValue();
             if (versionExpr.startsWith("${") && versionExpr.endsWith("}")) {
@@ -181,7 +179,7 @@ abstract class AbstractModuleTemplateProcessor {
     }
 
     void processArtifacts() throws IOException, MavenUniverseException, ProvisioningException {
-        Elements artifacts = template.getArtifacts();
+        List<XMLElement> artifacts = template.getArtifacts();
         if (artifacts == null) {
             return;
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018 Red Hat, Inc. and/or its affiliates
+ * Copyright 2016-2022 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,8 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-package org.wildfly.galleon.plugin;
+package org.wildfly.galleon.plugin.config.generator;
 
 import java.io.Closeable;
 import java.io.File;
@@ -27,21 +26,19 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-
 import org.jboss.galleon.MessageWriter;
 import org.jboss.jandex.Index;
 import org.jboss.jandex.IndexWriter;
-import org.jboss.jandex.Indexer;
-
 /**
- * @author Stuart Douglas
+ *
+ * @author jdenise
  */
-class JandexIndexer {
+public class Indexer {
 
     public static void createIndex(File jarFile, OutputStream target, MessageWriter log) throws IOException {
         ZipOutputStream zo;
 
-        Indexer indexer = new Indexer();
+        org.jboss.jandex.Indexer indexer = new org.jboss.jandex.Indexer();
 
         JarFile jar = new JarFile(jarFile);
 
