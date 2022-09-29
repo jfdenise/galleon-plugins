@@ -101,7 +101,7 @@ import org.wildfly.channel.ChannelRequirement;
 import org.wildfly.galleon.maven.build.tasks.ResourcesTask;
 import org.wildfly.galleon.plugin.ArtifactCoords;
 import org.wildfly.galleon.plugin.WfConstants;
-import org.wildfly.galleon.plugin.WfInstallPlugin;
+import org.wildfly.galleon.plugin.WfInstallTransformPlugin;
 
 /**
  * This Maven mojo creates a WildFly style feature-pack archive from the
@@ -248,7 +248,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
         try {
             artifactVersions = MavenProjectArtifactVersions.getInstance(project);
             jakartaTransformation = new JakartaTransformation(getLog(), jakartaTransform, jakartaTransformVerbose,
-                    jakartaTransformConfigsDir, jakartaTransformRepo, taskProps.get(WfInstallPlugin.JAKARTA_TRANSFORM_SUFFIX_KEY),
+                    jakartaTransformConfigsDir, jakartaTransformRepo, taskProps.get(WfInstallTransformPlugin.JAKARTA_TRANSFORM_SUFFIX_KEY),
                     jakartaTransformExcludedArtifacts);
             doExecute();
         } catch (RuntimeException | Error | MojoExecutionException | MojoFailureException e) {

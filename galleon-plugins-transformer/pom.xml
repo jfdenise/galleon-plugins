@@ -26,13 +26,17 @@
     <version>6.1.1.Final-SNAPSHOT</version>
   </parent>
 
-  <artifactId>wildfly-galleon-plugins</artifactId>
+  <artifactId>wildfly-galleon-plugins-transformer</artifactId>
   <packaging>jar</packaging>
 
-  <name>WildFly Galleon Plugins</name>
+  <name>WildFly Galleon Plugins with Transformer</name>
   <url>http://maven.apache.org</url>
 
   <dependencies>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>transformer</artifactId>
+    </dependency>
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>wildfly-galleon-plugins-common</artifactId>
@@ -75,7 +79,6 @@
     <dependency>
       <groupId>jaxen</groupId>
       <artifactId>jaxen</artifactId>
-      <version>${version.jaxen}</version>
     </dependency>
     <dependency>
       <groupId>junit</groupId>

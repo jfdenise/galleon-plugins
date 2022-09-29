@@ -26,20 +26,17 @@
     <version>6.1.1.Final-SNAPSHOT</version>
   </parent>
 
-  <artifactId>wildfly-galleon-plugins</artifactId>
+  <artifactId>wildfly-galleon-plugins-common</artifactId>
   <packaging>jar</packaging>
 
-  <name>WildFly Galleon Plugins</name>
+  <name>WildFly Galleon Plugins Common</name>
   <url>http://maven.apache.org</url>
 
   <dependencies>
     <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>wildfly-galleon-plugins-common</artifactId>
-    </dependency>
-    <dependency>
       <groupId>org.jboss</groupId>
       <artifactId>jandex</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.jboss.galleon</groupId>
@@ -60,7 +57,7 @@
     <dependency>
       <groupId>xom</groupId>
       <artifactId>xom</artifactId>
-      <scope>compile</scope>
+      <scope>provided</scope>
       <exclusions>
         <exclusion>
           <groupId>xalan</groupId>
@@ -75,7 +72,7 @@
     <dependency>
       <groupId>jaxen</groupId>
       <artifactId>jaxen</artifactId>
-      <version>${version.jaxen}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>junit</groupId>
@@ -86,51 +83,6 @@
 
   <build>
     <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <executions>
-          <execution>
-            <phase>package</phase>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-            <configuration>
-              <artifactSet>
-                <excludes>
-                  <exclude>org.aesh:aesh</exclude>
-                  <exclude>org.aesh:aesh-extensions</exclude>
-                  <exclude>org.jboss:jboss-dmr</exclude>
-                  <exclude>org.jboss:jboss-vfs</exclude>
-                  <exclude>org.jboss.logging:jboss-logging</exclude>
-                  <exclude>org.jboss.logmanager:jboss-logmanager</exclude>
-                  <exclude>org.jboss.marshalling:jboss-marshalling</exclude>
-                  <exclude>org.jboss.marshalling:jboss-marshalling-river</exclude>
-                  <exclude>org.jboss.modules:jboss-modules</exclude>
-                  <exclude>org.jboss.msc:jboss-msc</exclude>
-                  <exclude>org.jboss.galleon:galleon-core</exclude>
-                  <exclude>org.jboss.remoting:jboss-remoting</exclude>
-                  <exclude>org.jboss.remotingjmx:remoting-jmx</exclude>
-                  <exclude>org.jboss.stdio:jboss-stdio</exclude>
-                  <exclude>org.jboss.threads:jboss-threads</exclude>
-                  <exclude>org.jboss.xnio:xnio-api</exclude>
-                  <exclude>org.jboss.xnio:xnio-nio</exclude>
-                  <exclude>org.wildfly.client:wildfly-client-config</exclude>
-                  <exclude>org.wildfly.common:wildfly-common</exclude>
-                  <exclude>org.wildfly.core:wildfly-embedded</exclude>
-                  <exclude>org.wildfly.core:wildfly-cli</exclude>
-                  <exclude>org.wildfly.core:wildfly-controller-client</exclude>
-                  <exclude>org.wildfly.core:wildfly-launcher</exclude>
-                  <exclude>org.wildfly.core:wildfly-protocol</exclude>
-                  <exclude>org.wildfly.security:wildfly-elytron</exclude>
-                  <exclude>xalan:xalan</exclude>
-                  <exclude>xerces:xercesImpl</exclude>
-                </excludes>
-              </artifactSet>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>

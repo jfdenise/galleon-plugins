@@ -35,11 +35,16 @@
   <dependencies>
     <dependency>
       <groupId>${project.groupId}</groupId>
-      <artifactId>wildfly-galleon-plugins</artifactId>
+      <artifactId>wildfly-galleon-plugins-common</artifactId>
     </dependency>
     <dependency>
       <groupId>org.wildfly.core</groupId>
       <artifactId>wildfly-embedded</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jboss.galleon</groupId>
+      <artifactId>galleon-core</artifactId>
       <scope>provided</scope>
     </dependency>
   </dependencies>

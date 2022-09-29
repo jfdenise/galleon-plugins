@@ -36,7 +36,7 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.jboss.galleon.util.IoUtils;
 import org.wildfly.galleon.plugin.ArtifactCoords;
 import org.wildfly.galleon.plugin.WfConstants;
-import org.wildfly.galleon.plugin.WfInstallPlugin;
+import org.wildfly.galleon.plugin.WfInstallTransformPlugin;
 import org.wildfly.galleon.plugin.transformer.JakartaTransformer;
 import org.wildfly.galleon.plugin.transformer.TransformedArtifact;
 
@@ -104,7 +104,7 @@ public class JakartaTransformation {
             // Copy a renamed version that will be used for future provisioning.
             Path transformedVersionPath = artifactidPath.resolve(artifact.getVersion() + jakartaTransformSuffix);
             Files.createDirectories(transformedVersionPath);
-            String fileName = WfInstallPlugin.getTransformedArtifactFileName(artifact.getVersion(),
+            String fileName = WfInstallTransformPlugin.getTransformedArtifactFileName(artifact.getVersion(),
                     artifact.getFile().toPath().getFileName().toString(), jakartaTransformSuffix);
             Files.copy(versionPath.resolve(artifact.getFile().toPath().getFileName()),
                     transformedVersionPath.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
