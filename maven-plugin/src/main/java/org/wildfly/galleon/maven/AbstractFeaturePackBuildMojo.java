@@ -48,6 +48,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.TreeSet;
+import java.util.function.Function;
 
 import javax.xml.stream.XMLStreamException;
 
@@ -64,6 +65,7 @@ import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.MavenProjectHelper;
 import org.apache.maven.project.ProjectBuildingRequest;
+import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
 import org.apache.maven.shared.artifact.resolve.ArtifactResolver;
 import org.apache.maven.shared.artifact.resolve.ArtifactResolverException;
 import org.apache.maven.shared.artifact.resolve.ArtifactResult;
@@ -94,10 +96,16 @@ import org.jboss.galleon.util.ZipUtils;
 import org.jboss.galleon.xml.FeaturePackXmlWriter;
 import org.jboss.galleon.xml.PackageXmlParser;
 import org.jboss.galleon.xml.PackageXmlWriter;
+import org.wildfly.channel.Channel;
 import org.wildfly.channel.ChannelManifest;
 import org.wildfly.channel.ChannelManifestMapper;
+import org.wildfly.channel.ChannelSession;
 import org.wildfly.channel.ManifestRequirement;
+import org.wildfly.channel.MavenArtifact;
 import org.wildfly.channel.MavenCoordinate;
+import org.wildfly.channel.Repository;
+import org.wildfly.channel.maven.VersionResolverFactory;
+import static org.wildfly.channel.maven.VersionResolverFactory.DEFAULT_REPOSITORY_MAPPER;
 import org.wildfly.galleon.maven.build.tasks.ResourcesTask;
 import org.wildfly.galleon.plugin.ArtifactCoords;
 import org.wildfly.galleon.plugin.WfConstants;
@@ -177,6 +185,12 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
     @Parameter(alias = "add-feature-packs-as-required-manifests", required = false, defaultValue = "true")
     protected boolean addFeaturePacksAsRequiredManifests;
 
+    /**
+     * A List of channels used to resolve the feature-pack dependencies versions.
+     */
+    @Parameter(alias = "channels", required = false)
+    protected List<ChannelConfiguration> channels = Collections.emptyList();
+
     @Component
     protected RepositorySystem repoSystem;
 
@@ -196,6 +210,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
     private Path resourcesWildFly;
     private Path fpResourcesDir;
     private Path resourcesDir;
+    private ChannelSession channelSession;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -522,17 +537,26 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
         fpDependencies = new LinkedHashMap<>(buildConfig.getDependencies().size());
         for (Map.Entry<ArtifactCoords.Gav, FeaturePackDependencySpec> depEntry : buildConfig.getDependencies().entrySet()) {
             ArtifactCoords depCoords = depEntry.getKey().toArtifactCoords();
+            Path depZip = null;
             if (depCoords.getVersion() == null) {
-                final String coordsStr = artifactVersions.getVersion(depCoords.getGroupId() + ':' + depCoords.getArtifactId());
-                if (coordsStr == null) {
-                    throw new MojoExecutionException("Failed resolve artifact version for " + depCoords);
-                }
-                depCoords = ArtifactCoordsUtil.fromJBossModules(coordsStr, "zip");
-                if (depCoords.getExtension().equals("pom")) {
-                    depCoords = new ArtifactCoords(depCoords.getGroupId(), depCoords.getArtifactId(), depCoords.getVersion(), depCoords.getClassifier(), "zip");
+                if (!channels.isEmpty()) {
+                    MavenArtifact ma = resolveDependencyFromChannel(depCoords);
+                    depZip = ma.getFile().toPath();
+                    depCoords = new ArtifactCoords(depCoords.getGroupId(), depCoords.getArtifactId(), ma.getVersion(), depCoords.getClassifier(), depCoords.getExtension());
+                } else {
+                    final String coordsStr = artifactVersions.getVersion(depCoords.getGroupId() + ':' + depCoords.getArtifactId());
+                    if (coordsStr == null) {
+                        throw new MojoExecutionException("Failed resolve artifact version for " + depCoords);
+                    }
+                    depCoords = ArtifactCoordsUtil.fromJBossModules(coordsStr, "zip");
+                    if (depCoords.getExtension().equals("pom")) {
+                        depCoords = new ArtifactCoords(depCoords.getGroupId(), depCoords.getArtifactId(), depCoords.getVersion(), depCoords.getClassifier(), "zip");
+                    }
                 }
             }
-            final Path depZip = resolveArtifact(depCoords);
+            if (depZip == null) {
+                depZip = resolveArtifact(depCoords);
+            }
             final FeaturePackDependencySpec depSpec = depEntry.getValue();
             final FeaturePackConfig depConfig = depSpec.getTarget();
 
@@ -552,6 +576,36 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             fpBuilder.addFeaturePackDep(depSpec.getName(), FeaturePackConfig.builder(fpl).init(depConfig).build());
             fpDependencies.put(depSpec.getName(), fpDescr);
         }
+    }
+
+    private MavenArtifact resolveDependencyFromChannel(ArtifactCoords depCoords) throws MojoExecutionException {
+        if (channelSession == null) {
+            DefaultRepositorySystemSession session = MavenRepositorySystemUtils.newSession();
+            session.setLocalRepositoryManager(repoSession.getLocalRepositoryManager());
+            Map<String, RemoteRepository> mapping = new HashMap<>();
+            for (RemoteRepository r : repositories) {
+                mapping.put(r.getId(), r);
+            }
+            Function<Repository, RemoteRepository> mapper = r -> {
+                RemoteRepository rep = mapping.get(r.getId());
+                if (rep == null) {
+                    rep = DEFAULT_REPOSITORY_MAPPER.apply(r);
+                }
+                return rep;
+            };
+
+            List<Channel> channels = new ArrayList<>();
+            for (ChannelConfiguration channel : this.channels) {
+                channels.add(channel.toChannel(repositories));
+            }
+            VersionResolverFactory factory = new VersionResolverFactory(repoSystem, session, mapper);
+            channelSession = new ChannelSession(channels, factory);
+        }
+        MavenArtifact ma =
+                channelSession.resolveMavenArtifact(depCoords.getGroupId(),
+                        depCoords.getArtifactId(), depCoords.getExtension(),
+                        depCoords.getClassifier(), depCoords.getVersion());
+        return ma;
     }
 
     public Path resolveArtifact(ArtifactCoords coords) throws ProvisioningException {
