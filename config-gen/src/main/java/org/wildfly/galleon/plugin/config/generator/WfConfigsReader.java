@@ -36,6 +36,7 @@ import org.jboss.as.controller.client.helpers.Operations;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
 import org.jboss.galleon.Errors;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.config.ConfigId;
@@ -363,7 +364,7 @@ public class WfConfigsReader extends WfEmbeddedTaskBase<List<ProvisionedConfig>>
                     addedConfigs = CollectionUtils.add(addedConfigs, ProvisionedConfigXmlParser.parse(xml));
                 }
             } catch (IOException | ProvisioningException e) {
-                throw new ConfigGeneratorException(Errors.readDirectory(p), e);
+                throw new ConfigGeneratorException(BaseErrors.readDirectory(p), e);
             }
         }
         p = configsDir.resolve(UPDATED);
@@ -373,7 +374,7 @@ public class WfConfigsReader extends WfEmbeddedTaskBase<List<ProvisionedConfig>>
                     updatedConfigs = CollectionUtils.add(updatedConfigs, ProvisionedConfigXmlParser.parse(xml));
                 }
             } catch (IOException | ProvisioningException e) {
-                throw new ConfigGeneratorException(Errors.readDirectory(p), e);
+                throw new ConfigGeneratorException(BaseErrors.readDirectory(p), e);
             }
         }
     }
@@ -383,14 +384,14 @@ public class WfConfigsReader extends WfEmbeddedTaskBase<List<ProvisionedConfig>>
         try {
             Files.createDirectories(configsDir);
         } catch (IOException e) {
-            throw new ProvisioningException(Errors.mkdirs(configsDir), e);
+            throw new ProvisioningException(BaseErrors.mkdirs(configsDir), e);
         }
         final ProvisionedConfigXmlWriter writer = ProvisionedConfigXmlWriter.getInstance();
         for(ProvisionedConfig config : configs) {
             try {
                 writer.write(config, configsDir.resolve(config.getName()));
             } catch (Exception e) {
-                throw new ProvisioningException(Errors.writeFile(configsDir.resolve(config.getName())), e);
+                throw new ProvisioningException(BaseErrors.writeFile(configsDir.resolve(config.getName())), e);
             }
         }
     }

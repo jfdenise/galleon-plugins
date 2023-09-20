@@ -29,6 +29,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.Errors;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
@@ -112,7 +113,7 @@ public class WfDiffPlugin implements StateDiffPlugin {
             p = p.resolve(s);
         }
         if(!Files.exists(p)) {
-            throw new ProvisioningException(Errors.pathDoesNotExist(p));
+            throw new ProvisioningException(BaseErrors.pathDoesNotExist(p));
         }
         return p;
     }

@@ -62,6 +62,8 @@ import javax.xml.transform.stream.StreamSource;
 
 import nu.xom.Elements;
 import org.jboss.galleon.Errors;
+import org.jboss.galleon.BaseErrors;
+import org.jboss.galleon.Constants;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.ProvisioningManager;
@@ -403,7 +405,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         artifactResolver.resolve(plugin);
 
         final ProvisioningLayoutFactory layoutFactory = runtime.getLayout().getFactory();
-        pkgProgressTracker = layoutFactory.getProgressTracker(ProvisioningLayoutFactory.TRACK_PACKAGES);
+        pkgProgressTracker = layoutFactory.getProgressTracker(Constants.TRACK_PACKAGES);
         long pkgsTotal = 0;
         for(FeaturePackRuntime fp : runtime.getFeaturePacks()) {
             pkgsTotal += fp.getPackageNames().size();
@@ -625,8 +627,8 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         final Path examplesTmp = runtime.getTmpPath("example-configs");
         final ProvisioningLayoutFactory factory = runtime.getLayout().getFactory();
         final ProgressTracker<List<Object>> examplesTracker = factory.getProgressTracker("JBEXTRACONFIGS");
-        final List<String> trackedPhases = new ArrayList<>(List.of(ProvisioningLayoutFactory.TRACK_LAYOUT_BUILD, ProvisioningLayoutFactory.TRACK_PACKAGES,
-                TRACK_MODULES_BUILD, ProvisioningLayoutFactory.TRACK_CONFIGS));
+        final List<String> trackedPhases = new ArrayList<>(List.of(Constants.TRACK_LAYOUT_BUILD, Constants.TRACK_PACKAGES,
+                TRACK_MODULES_BUILD, Constants.TRACK_CONFIGS));
         if (isBulkResolveArtifacts()) {
             trackedPhases.add(2, TRACK_ARTIFACTS_RESOLVE);
         }
@@ -729,7 +731,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             try {
                 IoUtils.copy(configPath, exampleConfigsDir.resolve(configPath.getFileName()));
             } catch (IOException e) {
-                throw new ProvisioningException(Errors.copyFile(configPath, exampleConfigsDir.resolve(configPath.getFileName())), e);
+                throw new ProvisioningException(BaseErrors.copyFile(configPath, exampleConfigsDir.resolve(configPath.getFileName())), e);
             }
         }
         examplesTracker.complete();
@@ -852,7 +854,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
         final Path src = runtime.getStagedDir().resolve(xslt.getSrc());
         if (!Files.exists(src)) {
-            throw new ProvisioningException(Errors.pathDoesNotExist(src));
+            throw new ProvisioningException(BaseErrors.pathDoesNotExist(src));
         }
         // Copy the path to handle replacements
         Path tmp = runtime.getTmpPath().resolve(src.getFileName());
@@ -912,7 +914,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     public Transformer getXslTransformer(Path p) throws ProvisioningException {
         if(!Files.exists(p)) {
-            throw new ProvisioningException(Errors.pathDoesNotExist(p));
+            throw new ProvisioningException(BaseErrors.pathDoesNotExist(p));
         }
         try (InputStream styleInput = Files.newInputStream(p)) {
             final StreamSource stylesource = new StreamSource(styleInput);
@@ -1101,7 +1103,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     public void copyPath(final Path relativeTo, CopyPath copyPath) throws ProvisioningException {
         final Path src = relativeTo.resolve(copyPath.getSrc());
         if (!Files.exists(src)) {
-            throw new ProvisioningException(Errors.pathDoesNotExist(src));
+            throw new ProvisioningException(BaseErrors.pathDoesNotExist(src));
         }
         final Path target = copyPath.getTarget() == null ? runtime.getStagedDir() : runtime.getStagedDir().resolve(copyPath.getTarget());
         if (copyPath.isReplaceProperties()) {
@@ -1109,7 +1111,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 try {
                     Files.createDirectories(target.getParent());
                 } catch (IOException e) {
-                    throw new ProvisioningException(Errors.mkdirs(target.getParent()), e);
+                    throw new ProvisioningException(BaseErrors.mkdirs(target.getParent()), e);
                 }
             }
             try {
@@ -1136,13 +1138,13 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                             }
                         });
             } catch (IOException e) {
-                throw new ProvisioningException(Errors.copyFile(src, target), e);
+                throw new ProvisioningException(BaseErrors.copyFile(src, target), e);
             }
         } else {
             try {
                 IoUtils.copy(src, target);
             } catch (IOException e) {
-                throw new ProvisioningException(Errors.copyFile(src, target));
+                throw new ProvisioningException(BaseErrors.copyFile(src, target));
             }
         }
     }
@@ -1158,14 +1160,14 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         }
         if(deletePath.isIfEmpty()) {
             if(!Files.isDirectory(path)) {
-                throw new ProvisioningException(Errors.notADir(path));
+                throw new ProvisioningException(BaseErrors.notADir(path));
             }
             try(Stream<Path> stream = Files.list(path)) {
                 if(stream.iterator().hasNext()) {
                     return;
                 }
             } catch (IOException e) {
-                throw new ProvisioningException(Errors.readDirectory(path));
+                throw new ProvisioningException(BaseErrors.readDirectory(path));
             }
         }
         try {
@@ -1181,7 +1183,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             try {
                 Files.createDirectories(installDir.resolve(dirName));
             } catch (IOException e) {
-                throw new ProvisioningException(Errors.mkdirs(installDir.resolve(dirName)));
+                throw new ProvisioningException(BaseErrors.mkdirs(installDir.resolve(dirName)));
             }
         }
     }

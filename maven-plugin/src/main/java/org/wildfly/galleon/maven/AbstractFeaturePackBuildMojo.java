@@ -73,6 +73,7 @@ import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.ArtifactDescriptorException;
 import org.jboss.galleon.Constants;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.Errors;
 import org.jboss.galleon.ProvisioningDescriptionException;
 import org.jboss.galleon.ProvisioningException;
@@ -326,6 +327,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
         noWorkspaceSession.setOffline(true);
         // Using maven 3.9, having the remote repositories is required for the SNAPSHOT deployed artifacts
         // to have their version properly resolved. We set the session to be offline, so no remote resolution.
+        System.out.println("LOCAL CACHE " + repoSession.getLocalRepository().getBasedir());
         ArtifactListBuilder builder = new ArtifactListBuilder(new MavenArtifactRepositoryManager(repoSystem,
                 noWorkspaceSession, repositories), repoSession.getLocalRepository().getBasedir().toPath(), getLog());
         buildArtifactList(builder);
@@ -357,7 +359,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             try {
                 IoUtils.copy(scriptsDir, resourcesWildFly.resolve(WfConstants.SCRIPTS));
             } catch (IOException e) {
-                throw new MojoExecutionException(Errors.copyFile(scriptsDir, resourcesWildFly.resolve(WfConstants.SCRIPTS)), e);
+                throw new MojoExecutionException(BaseErrors.copyFile(scriptsDir, resourcesWildFly.resolve(WfConstants.SCRIPTS)), e);
             }
         }
 
@@ -366,7 +368,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             fpLayout = fpBuilder.build();
             FeaturePackXmlWriter.getInstance().write(fpLayout.getSpec(), getFpDir().resolve(Constants.FEATURE_PACK_XML));
         } catch (XMLStreamException | IOException | ProvisioningDescriptionException e) {
-            throw new MojoExecutionException(Errors.writeFile(getFpDir().resolve(Constants.FEATURE_PACK_XML)), e);
+            throw new MojoExecutionException(BaseErrors.writeFile(getFpDir().resolve(Constants.FEATURE_PACK_XML)), e);
         }
 
         // build feature-packs from the layout and attach as project artifacts
@@ -380,6 +382,20 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
                                 final Path target = Paths.get(project.getBuild().getDirectory()).resolve(artifactId + '-' + versionDir.getFileName() + ".zip");
                                 if (Files.exists(target)) {
                                     IoUtils.recursiveDelete(target);
+                                }
+                                try {
+                                    //Validate that we can parse this feature-pack...
+                                    System.out.println("CHECKING THE DIRECTORY " + versionDir);
+                                    FeaturePackDescriber.describeFeaturePack(versionDir,"UTF-8");
+                                    System.out.println("DONE " + target);
+//                                    Path vers = versionDir.resolve("galleon.properties");
+//                                    Properties props = new Properties();
+//                                    props.setProperty("galleon-core", "org.jboss.galleon:galleon-core"+Version.getVersion());
+//                                    try(FileWriter writer = new FileWriter(vers.toFile())) {
+//                                        props.store(writer, null);
+//                                    }
+                                } catch (ProvisioningDescriptionException ex) {
+                                    throw new RuntimeException(ex);
                                 }
                                 ZipUtils.zip(versionDir, target);
                                 debug("Attaching feature-pack %s as a project artifact", target);
@@ -494,7 +510,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
         if (taskPropsFile != null) {
             final Path p = taskPropsFile.toPath();
             if (!Files.exists(p)) {
-                throw new MojoExecutionException(Errors.pathDoesNotExist(p));
+                throw new MojoExecutionException(BaseErrors.pathDoesNotExist(p));
             }
             try (Reader reader = Files.newBufferedReader(p)) {
                 properties.load(reader);
@@ -623,7 +639,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             Files.createDirectories(targetPath.getParent());
             IoUtils.copy(layersConf, targetPath);
         } catch (IOException e) {
-            throw new MojoExecutionException(Errors.copyFile(layersConf, targetPath), e);
+            throw new MojoExecutionException(BaseErrors.copyFile(layersConf, targetPath), e);
         }
         final PackageSpec.Builder pkgBuilder = PackageSpec.builder(WfConstants.LAYERS_CONF);
         addPackage(getPackagesDir(), fpBuilder, pkgBuilder);
@@ -675,7 +691,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             Util.mkdirs(dir);
             PackageXmlWriter.getInstance().write(pkgSpec, dir.resolve(Constants.PACKAGE_XML));
         } catch (XMLStreamException | IOException e) {
-            throw new MojoExecutionException(Errors.writeFile(dir.resolve(Constants.PACKAGE_XML)), e);
+            throw new MojoExecutionException(BaseErrors.writeFile(dir.resolve(Constants.PACKAGE_XML)), e);
         }
     }
 
@@ -759,7 +775,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             try {
                 PackageXmlWriter.getInstance().write(pkgSpec, packageDir.resolve(Constants.PACKAGE_XML));
             } catch (XMLStreamException e) {
-                throw new IOException(Errors.writeFile(packageDir.resolve(Constants.PACKAGE_XML)), e);
+                throw new IOException(BaseErrors.writeFile(packageDir.resolve(Constants.PACKAGE_XML)), e);
             }
             if (modulesAll != null) {
                 modulesAll.addPackageDep(packageName, true);

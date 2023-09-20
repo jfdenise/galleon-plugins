@@ -27,11 +27,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.jboss.galleon.Constants;
 
-import org.jboss.galleon.Errors;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
-import org.jboss.galleon.layout.ProvisioningLayoutFactory;
 import org.jboss.galleon.progresstracking.ProgressTracker;
 import org.jboss.galleon.runtime.ProvisioningRuntime;
 import org.jboss.galleon.state.ProvisionedConfig;
@@ -138,7 +138,7 @@ public class WfConfigGenerator extends BaseConfigGenerator {
         }
 
         final ProgressTracker<ProvisionedConfig> progressTracker = runtime.getLayout().getFactory()
-                .getProgressTracker(ProvisioningLayoutFactory.TRACK_CONFIGS);
+                .getProgressTracker(Constants.TRACK_CONFIGS);
 
         try(WfProvisionedConfigHandler configHandler = new WfProvisionedConfigHandler(runtime, this)) {
             final List<ProvisionedConfig> configs = runtime.getConfigs();
@@ -210,7 +210,7 @@ public class WfConfigGenerator extends BaseConfigGenerator {
             Files.createDirectories(script.getParent());
             scriptWriter = new PrintWriter(Files.newBufferedWriter(script));
         } catch (IOException e) {
-            throw new ProvisioningException(Errors.writeFile(script), e);
+            throw new ProvisioningException(BaseErrors.writeFile(script), e);
         }
     }
 

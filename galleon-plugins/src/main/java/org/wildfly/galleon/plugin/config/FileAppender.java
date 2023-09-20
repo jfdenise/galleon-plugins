@@ -24,7 +24,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
-import org.jboss.galleon.Errors;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.runtime.PackageRuntime;
 import org.wildfly.galleon.plugin.WfInstallPlugin;
@@ -108,13 +108,13 @@ public class FileAppender implements WildFlyPackageTask {
             if(this.isIgnore()) {
                 return;
             }
-            throw new ProvisioningException(Errors.pathDoesNotExist(targetPath));
+            throw new ProvisioningException(BaseErrors.pathDoesNotExist(targetPath));
         }
         try {
             if (this.src != null) {
                 final Path srcPath = plugin.getRuntime().getStagedDir().resolve(this.src);
                 if (!Files.exists(srcPath)) {
-                    throw new ProvisioningException(Errors.pathDoesNotExist(srcPath));
+                    throw new ProvisioningException(BaseErrors.pathDoesNotExist(srcPath));
                 }
                 this.lines.clear();
                 this.lines.addAll(Files.readAllLines(srcPath));

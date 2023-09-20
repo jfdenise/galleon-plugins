@@ -36,6 +36,7 @@ import org.jboss.as.controller.client.helpers.ClientConstants;
 import org.jboss.as.controller.client.helpers.Operations;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.Errors;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.spec.FeatureSpec;
@@ -339,7 +340,7 @@ public class FeatureSpecGenerator implements ForkCallback {
         try(BufferedWriter writer = Files.newBufferedWriter(specsFile)) {
             writer.write(specs.asString());
         } catch (IOException e) {
-            throw new ProvisioningException(Errors.writeFile(specsFile), e);
+            throw new ProvisioningException(BaseErrors.writeFile(specsFile), e);
         }
     }
 

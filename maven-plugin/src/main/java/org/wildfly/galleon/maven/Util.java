@@ -30,6 +30,7 @@ import java.util.Map;
 import javax.xml.stream.XMLStreamException;
 
 import org.apache.maven.plugin.MojoExecutionException;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.Errors;
 import org.jboss.galleon.util.IoUtils;
 import org.wildfly.galleon.plugin.WfConstants;
@@ -43,7 +44,7 @@ class Util {
     static WildFlyFeaturePackBuild loadFeaturePackBuildConfig(File configDir, String configFile) throws MojoExecutionException {
         final Path path = Paths.get(configDir.getAbsolutePath(), configFile);
         if (!Files.exists(path)) {
-            throw new MojoExecutionException(Errors.pathDoesNotExist(path));
+            throw new MojoExecutionException(BaseErrors.pathDoesNotExist(path));
         }
         return loadFeaturePackBuildConfig(path);
     }
@@ -62,7 +63,7 @@ class Util {
         try {
             Files.createDirectories(dir);
         } catch (IOException e) {
-            throw new MojoExecutionException(Errors.mkdirs(dir), e);
+            throw new MojoExecutionException(BaseErrors.mkdirs(dir), e);
         }
     }
 
@@ -82,7 +83,7 @@ class Util {
             try {
                 IoUtils.copy(srcDir, targetDir);
             } catch (IOException e) {
-                throw new MojoExecutionException(Errors.copyFile(srcDir, targetDir), e);
+                throw new MojoExecutionException(BaseErrors.copyFile(srcDir, targetDir), e);
             }
         }
     }

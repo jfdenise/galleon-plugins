@@ -29,7 +29,7 @@ import java.util.List;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
-import org.jboss.galleon.Errors;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.runtime.PackageRuntime;
 import org.jboss.galleon.util.CollectionUtils;
@@ -100,7 +100,7 @@ public class XmlMerge implements WildFlyPackageTask {
                 }
             }
         } catch (IOException e) {
-            throw new ProvisioningException(Errors.readDirectory(srcDir));
+            throw new ProvisioningException(BaseErrors.readDirectory(srcDir));
         }
         if(buf.length() == 0) {
             return;
@@ -109,7 +109,7 @@ public class XmlMerge implements WildFlyPackageTask {
         final Path pmWf = pkg.getResource(WfConstants.PM, WfConstants.WILDFLY);
         final Path mergerXsl = pmWf.resolve("merger.xsl");
         if(!Files.exists(mergerXsl)) {
-            throw new ProvisioningException(Errors.pathDoesNotExist(mergerXsl));
+            throw new ProvisioningException(BaseErrors.pathDoesNotExist(mergerXsl));
         }
 
         final Path mergedXml = plugin.getRuntime().getStagedDir().resolve(output);

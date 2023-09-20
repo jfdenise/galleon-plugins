@@ -34,8 +34,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.jboss.galleon.BaseErrors;
 
-import org.jboss.galleon.Errors;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.util.CollectionUtils;
 import org.jboss.galleon.util.IoUtils;
@@ -166,7 +166,7 @@ public class ForkedEmbeddedUtil {
         try (BufferedWriter writer = Files.newBufferedWriter(props)) {
             System.getProperties().store(writer, "");
         } catch (IOException e) {
-            throw new ProvisioningException(Errors.writeFile(props), e);
+            throw new ProvisioningException(BaseErrors.writeFile(props), e);
         }
         return props;
     }

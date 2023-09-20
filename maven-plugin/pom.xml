@@ -116,6 +116,10 @@
       <artifactId>galleon-maven-universe</artifactId>
     </dependency>
     <dependency>
+      <groupId>org.jboss.galleon</groupId>
+      <artifactId>galleon-core</artifactId>
+    </dependency>
+    <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>wildfly-config-gen</artifactId>
     </dependency>

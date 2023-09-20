@@ -40,7 +40,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.jboss.galleon.Constants;
-import org.jboss.galleon.Errors;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.layout.FeaturePackDescription;
 import org.jboss.galleon.spec.FeaturePackSpec;
 import org.jboss.galleon.spec.PackageDependencySpec;
@@ -155,7 +155,7 @@ public class WfFeaturePackBuildMojo extends AbstractFeaturePackBuildMojo {
             try {
                 IoUtils.copy(specsDir, targetResources);
             } catch (IOException e1) {
-                throw new MojoExecutionException(Errors.copyFile(specsDir, targetResources), e1);
+                throw new MojoExecutionException(BaseErrors.copyFile(specsDir, targetResources), e1);
             }
         }
 
@@ -289,7 +289,7 @@ public class WfFeaturePackBuildMojo extends AbstractFeaturePackBuildMojo {
                 writer.newLine();
             }
         } catch (IOException e) {
-            throw new MojoExecutionException(Errors.mkdirs(schemaGroupsTxt.getParent()), e);
+            throw new MojoExecutionException(BaseErrors.mkdirs(schemaGroupsTxt.getParent()), e);
         } finally {
             if(writer != null) {
                 try {

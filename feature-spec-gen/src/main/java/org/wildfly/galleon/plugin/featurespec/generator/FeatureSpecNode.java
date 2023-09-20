@@ -35,7 +35,7 @@ import javax.xml.stream.XMLStreamException;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
 import org.jboss.galleon.Constants;
-import org.jboss.galleon.Errors;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.spec.FeatureAnnotation;
 import org.jboss.galleon.spec.FeatureParameterSpec;
@@ -476,13 +476,13 @@ class FeatureSpecNode {
             try {
                 Files.createDirectories(specDir);
             } catch (IOException e) {
-                throw new ProvisioningException(Errors.mkdirs(specDir), e);
+                throw new ProvisioningException(BaseErrors.mkdirs(specDir), e);
             }
         }
         try {
             FeatureSpecXmlWriter.getInstance().write(spec, specDir.resolve("spec.xml"));
         } catch (XMLStreamException | IOException e) {
-            throw new ProvisioningException(Errors.writeFile(specDir.resolve("spec.xml")), e);
+            throw new ProvisioningException(BaseErrors.writeFile(specDir.resolve("spec.xml")), e);
         }
         gen.increaseSpecCount();
     }

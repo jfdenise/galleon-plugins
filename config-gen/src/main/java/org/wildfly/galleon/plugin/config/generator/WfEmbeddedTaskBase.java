@@ -34,7 +34,7 @@ import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.client.helpers.ClientConstants;
 import org.jboss.as.controller.client.helpers.Operations;
 import org.jboss.dmr.ModelNode;
-import org.jboss.galleon.Errors;
+import org.jboss.galleon.BaseErrors;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.layout.ProvisioningLayout;
@@ -163,7 +163,7 @@ public abstract class WfEmbeddedTaskBase<R> implements ForkCallback {
             Files.createDirectories(script.getParent());
             scriptWriter = new PrintWriter(Files.newBufferedWriter(script));
         } catch (IOException e) {
-            throw new ProvisioningException(Errors.writeFile(script), e);
+            throw new ProvisioningException(BaseErrors.writeFile(script), e);
         }
     }
 
@@ -455,7 +455,7 @@ public abstract class WfEmbeddedTaskBase<R> implements ForkCallback {
         this.jbossHome = args[0];
         final Path script = Paths.get(args[1]);
         if(!Files.exists(script)) {
-            throw new ConfigGeneratorException(Errors.pathDoesNotExist(script));
+            throw new ConfigGeneratorException(BaseErrors.pathDoesNotExist(script));
         }
         try {
             executeScript(script);
