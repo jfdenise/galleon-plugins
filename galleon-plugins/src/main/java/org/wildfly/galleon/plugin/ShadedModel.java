@@ -156,49 +156,43 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
         Path targetMetaInf = target.resolve("META-INF");
         Path targetManifestPath = targetMetaInf.resolve("MANIFEST.MF");
         Manifest manifest;
-        FileInputStream stream = null;
-        try {
-            if (!Files.exists(targetManifestPath)) {
-                manifest = new Manifest();
-            } else {
-                stream = new FileInputStream(targetManifestPath.toFile());
+        if (!Files.exists(targetManifestPath)) {
+            manifest = new Manifest();
+        } else {
+            try (FileInputStream stream = new FileInputStream(targetManifestPath.toFile())) {
                 manifest = new Manifest(stream);
             }
-            Attributes attributes = manifest.getMainAttributes();
-            String mainClass = getMainClass();
-            if (mainClass != null) {
-                attributes.put(Attributes.Name.MAIN_CLASS, mainClass);
-            }
-            Map<String,String> manifestEntries = getManifestEntries();
-            if (manifestEntries != null) {
-                for (Map.Entry<String, String> entry : manifestEntries.entrySet()) {
-                    if (entry.getValue() == null) {
-                        attributes.remove(new Attributes.Name(entry.getKey()));
-                    } else {
-                        attributes.put(new Attributes.Name(entry.getKey()), entry.getValue());
-                    }
+        }
+        Attributes attributes = manifest.getMainAttributes();
+        String mainClass = getMainClass();
+        if (mainClass != null) {
+            attributes.put(Attributes.Name.MAIN_CLASS, mainClass);
+        }
+        Map<String, String> manifestEntries = getManifestEntries();
+        if (manifestEntries != null) {
+            for (Map.Entry<String, String> entry : manifestEntries.entrySet()) {
+                if (entry.getValue() == null) {
+                    attributes.remove(new Attributes.Name(entry.getKey()));
+                } else {
+                    attributes.put(new Attributes.Name(entry.getKey()), entry.getValue());
                 }
             }
-            attributes.put(Attributes.Name.IMPLEMENTATION_TITLE, "Galleon shading of " + getName());
-            attributes.put(Attributes.Name.SPECIFICATION_TITLE, "Galleon shading of " + getName());
-            attributes.put(Attributes.Name.IMPLEMENTATION_VERSION, "Unknown");
-            Files.deleteIfExists(targetManifestPath);
-            try (FileOutputStream out = new FileOutputStream(targetManifestPath.toFile())) {
-                manifest.write(out);
-            }
-            Path moduleInfoPath = target.resolve("module-info.class");
-            Files.deleteIfExists(moduleInfoPath);
-            Path indexListPath = target.resolve("META-INF/INDEX.LIST");
-            Files.deleteIfExists(indexListPath);
-            Path services = target.resolve("META-INF").resolve("services");
-            for (Map.Entry<String, List<String>> entry : serviceLoaders.entrySet()) {
-                Path file = services.resolve(entry.getKey());
-                Files.write(file, entry.getValue(), UTF_8);
-            }
-        } finally {
-            if (stream != null) {
-                stream.close();
-            }
+        }
+        attributes.put(Attributes.Name.IMPLEMENTATION_TITLE, "Galleon shading of " + getName());
+        attributes.put(Attributes.Name.SPECIFICATION_TITLE, "Galleon shading of " + getName());
+        attributes.put(Attributes.Name.IMPLEMENTATION_VERSION, "Unknown");
+        Files.deleteIfExists(targetManifestPath);
+        try (FileOutputStream out = new FileOutputStream(targetManifestPath.toFile())) {
+            manifest.write(out);
+        }
+        Path moduleInfoPath = target.resolve("module-info.class");
+        Files.deleteIfExists(moduleInfoPath);
+        Path indexListPath = target.resolve("META-INF/INDEX.LIST");
+        Files.deleteIfExists(indexListPath);
+        Path services = target.resolve("META-INF").resolve("services");
+        for (Map.Entry<String, List<String>> entry : serviceLoaders.entrySet()) {
+            Path file = services.resolve(entry.getKey());
+            Files.write(file, entry.getValue(), UTF_8);
         }
     }
 
