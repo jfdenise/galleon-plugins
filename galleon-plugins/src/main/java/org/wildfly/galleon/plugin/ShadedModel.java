@@ -69,8 +69,9 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
     private final AbstractArtifactInstaller installer;
     private final boolean channelArtifactResolution;
     private final WfInstallPlugin plugin;
-
+    private final boolean requireChannel;
     ShadedModel(WfInstallPlugin plugin,
+            boolean requireChannel,
             Path shadedModel,
             ProvisioningRuntime runtime,
             WfInstallPlugin.ArtifactResolver artifactResolver,
@@ -78,6 +79,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
             AbstractArtifactInstaller installer,
             boolean channelArtifactResolution) throws IOException, ProvisioningDescriptionException {
         this.shadedModel = shadedModel;
+        this.requireChannel = requireChannel;
         this.runtime = runtime;
         this.artifactResolver = artifactResolver;
         this.log = log;
@@ -103,7 +105,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
             Element e = dependencies.get(i);
             String[] coords = e.getValue().split(":");
             String ga = coords[0] + ":" + coords[1];
-            MavenArtifact a = Utils.toArtifactCoords(mergedArtifactVersions, e.getValue(), false, channelArtifactResolution, plugin.requireChannel(ga));
+            MavenArtifact a = Utils.toArtifactCoords(mergedArtifactVersions, e.getValue(), false, channelArtifactResolution, requireChannel);
             artifactResolver.resolve(a);
                         System.out.println("RESOLVING " + e.getValue() + " VERSION " + a.getVersion());
             Path transformed = installer.installCopiedArtifact(a);

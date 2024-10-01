@@ -820,6 +820,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             if(Files.exists(shadedDir)) {
                 try {
                     shadedPackages.put(pkg.getName(), new ShadedModel(this,
+                            requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()),
                             shadedDir.resolve("shaded-model.xml"),
                             runtime,
                             artifactResolver, log, mergedArtifactVersions, artifactInstaller, channelArtifactResolution));
@@ -1062,7 +1063,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         return requireChannel(gaToProducer.get(artifact_ga));
     }
 
-    private boolean requireChannel(ProducerSpec spec) {
+    boolean requireChannel(ProducerSpec spec) {
         WildFlyChannelResolutionMode mode = channelResolutionModes.get(spec);
         boolean requireChannel = false;
         if(mode != null) {
