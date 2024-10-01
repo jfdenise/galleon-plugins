@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.jar.Attributes;
 import nu.xom.Builder;
@@ -64,6 +65,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
     private final WfInstallPlugin.ArtifactResolver artifactResolver;
     private final MessageWriter log;
     private final Map<String, String> mergedArtifactVersions;
+    private final Optional<ArtifactRecorder> recorder;
     private boolean seenManifest;
     private final Path shadedModel;
     private final AbstractArtifactInstaller installer;
@@ -77,7 +79,8 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
             WfInstallPlugin.ArtifactResolver artifactResolver,
             MessageWriter log, Map<String, String> mergedArtifactVersions,
             AbstractArtifactInstaller installer,
-            boolean channelArtifactResolution) throws IOException, ProvisioningDescriptionException {
+            boolean channelArtifactResolution,
+            Optional<ArtifactRecorder> recorder) throws IOException, ProvisioningDescriptionException {
         this.shadedModel = shadedModel;
         this.requireChannel = requireChannel;
         this.runtime = runtime;
@@ -94,6 +97,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
         rootElement = document.getRootElement();
         this.channelArtifactResolution = channelArtifactResolution;
         this.plugin = plugin;
+        this.recorder = recorder;
     }
 
     List<MavenArtifact> getArtifacts() throws ProvisioningException, IOException {
@@ -111,6 +115,9 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
             Path transformed = installer.installCopiedArtifact(a);
             a.setPath(transformed);
             artifacts.add(a);
+            if (recorder.isPresent()) {
+                recorder.get().cache(a, a.getPath());
+            }
         }
         return artifacts;
     }

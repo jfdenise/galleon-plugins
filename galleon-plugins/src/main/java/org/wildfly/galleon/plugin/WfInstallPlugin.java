@@ -823,7 +823,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                             requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()),
                             shadedDir.resolve("shaded-model.xml"),
                             runtime,
-                            artifactResolver, log, mergedArtifactVersions, artifactInstaller, channelArtifactResolution));
+                            artifactResolver, log, mergedArtifactVersions, artifactInstaller, channelArtifactResolution, artifactRecorder));
                 } catch (IOException ex) {
                     throw new ProvisioningException(ex);
                 }
