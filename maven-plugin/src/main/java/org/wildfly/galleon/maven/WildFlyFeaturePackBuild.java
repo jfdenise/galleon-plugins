@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 Red Hat, Inc. and/or its affiliates
+ * Copyright 2016-2025 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,6 +43,7 @@ public class WildFlyFeaturePackBuild {
 
         private FeaturePackLocation producer;
         private Map<Gav, FeaturePackDependencySpec> dependencies = Collections.emptyMap();
+        private Map<Gav, Boolean> allowDependencyOnFamilyMembers = Collections.emptyMap();
         private Set<String> schemaGroups = Collections.emptySet();
         private Set<String> defaultPackages = Collections.emptySet();
         private List<ConfigModel> configs = Collections.emptyList();
@@ -57,6 +58,7 @@ public class WildFlyFeaturePackBuild {
         private String packageStabilityLevel;
         private String minimumStabilityLevel;
         private String stabilityLevel;
+        private String family;
 
         private Builder() {
         }
@@ -66,13 +68,23 @@ public class WildFlyFeaturePackBuild {
             return this;
         }
 
+        public Builder setFamily(String family) {
+            this.family = family;
+            return this;
+        }
+
         public Builder addDefaultPackage(String packageName) {
             defaultPackages = CollectionUtils.add(defaultPackages, packageName);
             return this;
         }
 
         public Builder addDependency(Gav gav, FeaturePackDependencySpec dependency) {
+            return addDependency(gav, dependency, false);
+        }
+
+        public Builder addDependency(Gav gav, FeaturePackDependencySpec dependency, boolean allowDependencyOnFamilyMember) {
             dependencies = CollectionUtils.putLinked(dependencies, gav, dependency);
+            allowDependencyOnFamilyMembers = CollectionUtils.putLinked(allowDependencyOnFamilyMembers, gav, allowDependencyOnFamilyMember);
             return this;
         }
 
@@ -170,7 +182,8 @@ public class WildFlyFeaturePackBuild {
     private final String packageStabilityLevel;
     private final String minimumStabilityLevel;
     private final String stabilityLevel;
-
+    private final Map<Gav, Boolean> allowDependencyOnFamilyMembers;
+    private final String family;
     private WildFlyFeaturePackBuild(Builder builder) {
         this.producer = builder.producer;
         this.dependencies = CollectionUtils.unmodifiable(builder.dependencies);
@@ -188,6 +201,8 @@ public class WildFlyFeaturePackBuild {
         this.packageStabilityLevel = builder.packageStabilityLevel;
         this.minimumStabilityLevel = builder.minimumStabilityLevel;
         this.stabilityLevel = builder.stabilityLevel;
+        this.allowDependencyOnFamilyMembers = builder.allowDependencyOnFamilyMembers;
+        this.family = builder.family;
     }
 
     public FeaturePackLocation getProducer() {
@@ -200,6 +215,14 @@ public class WildFlyFeaturePackBuild {
 
     public Map<Gav, FeaturePackDependencySpec> getDependencies() {
         return dependencies;
+    }
+
+    public Map<Gav, Boolean> getDependenciesOnFamilyMember() {
+        return allowDependencyOnFamilyMembers;
+    }
+
+    public String getFamily() {
+        return family;
     }
 
     public boolean hasSchemaGroups() {

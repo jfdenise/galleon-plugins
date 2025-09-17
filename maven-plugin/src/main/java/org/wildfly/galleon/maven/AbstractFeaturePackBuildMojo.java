@@ -499,6 +499,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
         try {
             fpBuilder.getSpecBuilder().setConfigStability(defaultConfigStabilityLevel);
             fpBuilder.getSpecBuilder().setPackageStability(defaultPackageStabilityLevel);
+            fpBuilder.getSpecBuilder().setFamily(buildConfig.getFamily());
             fpLayout = fpBuilder.build();
             FeaturePackXmlWriter.getInstance().write(fpLayout.getSpec(), getFpDir().resolve(Constants.FEATURE_PACK_XML));
         } catch (XMLStreamException | IOException | ProvisioningDescriptionException e) {
@@ -886,7 +887,16 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             final FeaturePackConfig depConfig = depSpec.getTarget();
 
             final FeaturePackDescription fpDescr = FeaturePackDescriber.describeFeaturePackZip(depZip);
-
+            Boolean allowedDependencyOnMember = buildConfig.getDependenciesOnFamilyMember().get(depEntry.getKey());
+            String family = null;
+            if (allowedDependencyOnMember) {
+                family = fpDescr.getSpec().getFamily();
+                if (family == null) {
+                    throw new MojoExecutionException("The dependency on " + depCoords + " allows to depend on family although the feature-pack doesn't belong to a family");
+                } else {
+                    System.out.println("We have a a dependency on " + depConfig + " that allows for family members in the " + family + " family");
+                }
+            }
             // here we need to determine which format to use to persist the dependency location:
             // Maven coordinates or the FPL. The format is actually set in the feature-pack build parser.
             // However, the parser can't set the actual FPL value, since it does not have enough information.
@@ -898,7 +908,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             } else if(org.apache.commons.lang3.StringUtils.isEmpty(fpl.getBuild())) {
                 fpl = fpl.replaceBuild(depCoords.getVersion());
             }
-            fpBuilder.addFeaturePackDep(depSpec.getName(), FeaturePackConfig.builder(fpl).init(depConfig).build());
+            fpBuilder.addFeaturePackDep(depSpec.getName(), FeaturePackConfig.builder(fpl, family).init(depConfig).build());
             fpDependencies.put(depSpec.getName(), fpDescr);
         }
     }

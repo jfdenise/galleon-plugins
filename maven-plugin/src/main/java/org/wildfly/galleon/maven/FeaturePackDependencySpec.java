@@ -34,12 +34,22 @@ public class FeaturePackDependencySpec {
         return new FeaturePackDependencySpec(name, fpConfig);
     }
 
+    public static FeaturePackDependencySpec create(String name, FeaturePackConfig fpConfig, String family) {
+        return new FeaturePackDependencySpec(name, fpConfig, family);
+    }
+
     private final String name;
     private final FeaturePackConfig fpConfig;
+    private final String family;
 
     private FeaturePackDependencySpec(String name, FeaturePackConfig fpConfig) {
+        this(name, fpConfig, null);
+    }
+
+    private FeaturePackDependencySpec(String name, FeaturePackConfig fpConfig, String family) {
         this.name = name;
         this.fpConfig = fpConfig;
+        this.family = family;
     }
 
     /**
