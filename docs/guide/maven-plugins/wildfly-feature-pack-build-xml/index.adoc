@@ -128,4 +128,18 @@ NOTE: If the `<config-stability-level>` and the `<package-stability-level>` are 
 the `<package-stability-level>` must imply the level of the `<config-stability-level>`.
 
 NOTE: Stability options set in the Maven Plugin override the values set in the file.
- 
+
+
+##### Dependency on any member of a feature-pack family
+
+A feature-pack can be part of a family. Members of the family can be used at provisioning time in place of other members.
+By default, a feature-pack expresses a dependency on a given feature-pack. To allow to depend on any member of the feature-pack family, 
+you can use the `familyMemberAllowed` attribute. For example:
+
+```
+...
+ <dependency group-id="org.wildfly.core" artifact-id="wildfly-core-galleon-pack" familyMemberAllowed="true">
+ ...
+ </dependency>
+...
+```
