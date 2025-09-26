@@ -888,9 +888,8 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
 
             final FeaturePackDescription fpDescr = FeaturePackDescriber.describeFeaturePackZip(depZip);
             Boolean allowedDependencyOnMember = buildConfig.getDependenciesOnFamilyMember().get(depEntry.getKey());
-            String family = null;
             if (allowedDependencyOnMember) {
-                family = fpDescr.getSpec().getFamily();
+                String family = fpDescr.getSpec().getFamily();
                 if (family == null) {
                     throw new MojoExecutionException("The dependency on " + depCoords + " allows to depend on family although the feature-pack doesn't belong to a family");
                 } else {
@@ -908,7 +907,7 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             } else if(org.apache.commons.lang3.StringUtils.isEmpty(fpl.getBuild())) {
                 fpl = fpl.replaceBuild(depCoords.getVersion());
             }
-            fpBuilder.addFeaturePackDep(depSpec.getName(), FeaturePackConfig.builder(fpl, family).init(depConfig).build());
+            fpBuilder.addFeaturePackDep(depSpec.getName(), FeaturePackConfig.builder(fpl, false, allowedDependencyOnMember).init(depConfig).build());
             fpDependencies.put(depSpec.getName(), fpDescr);
         }
     }

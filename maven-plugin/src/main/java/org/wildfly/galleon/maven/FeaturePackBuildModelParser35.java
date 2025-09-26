@@ -162,10 +162,10 @@ class FeaturePackBuildModelParser35 implements XMLElementReader<WildFlyFeaturePa
 
     enum Attribute implements XmlNameProvider {
 
-        ALLOW_DEPENDENCY_ON_FAMILY_MEMBER("allowDependencyOnFamilyMember"),
         ARTIFACT("artifact"),
         ARTIFACT_ID("artifact-id"),
         FAMILY("family"),
+        FAMILY_MEMBER_ALLOWED("familyMemberAllowed"),
         GROUP_ID("group-id"),
         ID("id"),
         NAME("name"),
@@ -182,7 +182,7 @@ class FeaturePackBuildModelParser35 implements XMLElementReader<WildFlyFeaturePa
 
         static {
             Map<QName, Attribute> attributesMap = new HashMap<>(9);
-            attributesMap.put(new QName(ALLOW_DEPENDENCY_ON_FAMILY_MEMBER.getLocalName()), ALLOW_DEPENDENCY_ON_FAMILY_MEMBER);
+            attributesMap.put(new QName(FAMILY_MEMBER_ALLOWED.getLocalName()), FAMILY_MEMBER_ALLOWED);
             attributesMap.put(new QName(ARTIFACT.getLocalName()), ARTIFACT);
             attributesMap.put(new QName(ARTIFACT_ID.getLocalName()), ARTIFACT_ID);
             attributesMap.put(new QName(FAMILY.getLocalName()), FAMILY);
@@ -383,7 +383,7 @@ class FeaturePackBuildModelParser35 implements XMLElementReader<WildFlyFeaturePa
                 case TRANSLATE_TO_FPL:
                     translateToFpl = Boolean.parseBoolean(reader.getAttributeValue(i));
                     break;
-                case ALLOW_DEPENDENCY_ON_FAMILY_MEMBER:
+                case FAMILY_MEMBER_ALLOWED:
                     allowDependencyOnFamilyMember = Boolean.parseBoolean(reader.getAttributeValue(i));
                     break;
                 default:
