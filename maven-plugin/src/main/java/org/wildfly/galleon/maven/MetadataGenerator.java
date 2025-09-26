@@ -329,7 +329,9 @@ class MetadataGenerator {
                 for (GalleonLayerDependency dep : spec.getLayerDeps()) {
                     List<ConfigLayerSpec> depSpecs = layerSpecs.get(dep.getName());
                     if (depSpecs == null) {
-                        throw new Exception("The layer dependency " + dep.getName() + " is unknown, fix the layer spec.");
+                        // For now continue
+                        //throw new Exception("The layer dependency " + dep.getName() + " is unknown, fix the layer spec.");
+                        continue;
                     }
                     Stability stabilityDep = getMinimalStability(layerSpecs, dep.getName(), depSpecs, pl, seen);
                     if (stabilityDep != null) {
