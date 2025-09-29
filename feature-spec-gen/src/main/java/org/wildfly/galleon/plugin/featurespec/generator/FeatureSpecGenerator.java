@@ -228,8 +228,8 @@ public class FeatureSpecGenerator implements ForkCallback {
                 domainRoots = readFeatureSpecs(createEmbeddedHc(installation, mimimumStability));
             }
         }
-
-        final FeatureSpecNode rootNode = new FeatureSpecNode(this, FeatureSpecNode.STANDALONE_MODEL, standaloneFeatures.require(ClientConstants.NAME).asString(), standaloneFeatures);
+        ModelNode features = new ModelNode();
+        final FeatureSpecNode rootNode = new FeatureSpecNode(this, FeatureSpecNode.STANDALONE_MODEL, standaloneFeatures.require(ClientConstants.NAME).asString(), standaloneFeatures, features, generateCompleteModel);
 
         if (domainRoots != null) {
             rootNode.setDomainDescr(WfConstants.DOMAIN, new ModelNode());
@@ -254,6 +254,11 @@ public class FeatureSpecGenerator implements ForkCallback {
         }
 
         rootNode.buildSpecs();
+        try {
+            Files.write(outputDir.resolve("features.json"), features.toJSONString(false).getBytes());
+        } catch (IOException ex) {
+            throw new ProvisioningException(ex);
+        }
     }
 
     @Override
