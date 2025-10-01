@@ -12,6 +12,7 @@ import java.util.Set;
 import java.nio.file.Path;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -88,7 +89,6 @@ public record Metadata(
 
         return new Layer(
             layer.name(),
-            layer.stability(),
             sortedDependencies,
             layer.managementModel(),
             sortedProperties,
@@ -97,14 +97,46 @@ public record Metadata(
         );
     }
 
+    public boolean containsLayer(String layerName) {
+        return layers().stream()
+                .anyMatch(l -> layerName.equals(l.name));
+    }
     public record Layer(
             String name,
-            String stability,
             List<LayerDependency> dependencies,
             ObjectNode managementModel,
             List<Property> properties,
             List<AttributeConfiguration> configurations,
             List<String> packages) {
+
+        public String description() {
+            return properties.stream()
+                    .filter(p -> p.name().equals("org.wildfly.description"))
+                    .map(Metadata.Property::value)
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        public String note() {
+            return properties.stream()
+                    .filter(p -> p.name().equals("org.wildfly.note"))
+                    .map(Metadata.Property::value)
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        public String prettyManagementModel() {
+            if (managementModel == null) {
+                return null;
+            }
+            ObjectMapper mapper = new ObjectMapper();
+            try {
+                return mapper.writerWithDefaultPrettyPrinter()
+                        .writeValueAsString(managementModel);
+            } catch (JsonProcessingException e) {
+                return null;
+            }
+        }
     }
 
     public record LayerDependency(
