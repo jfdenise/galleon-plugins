@@ -30,8 +30,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.xml.stream.XMLStreamException;
 
@@ -255,7 +258,14 @@ public class FeatureSpecGenerator implements ForkCallback {
 
         rootNode.buildSpecs();
         try {
-            Files.write(outputDir.resolve("features.json"), features.toJSONString(false).getBytes());
+            // Sort features to produce a sorted features.json file
+            Set<String> sortedKeys = features.keys().stream()
+                    .sorted().collect(Collectors.toCollection(LinkedHashSet::new));
+            ModelNode sortedFeatures = new ModelNode();
+            for (String key : sortedKeys) {
+                sortedFeatures.get(key).set(features.get(key));
+            }
+            Files.write(outputDir.resolve("features.json"), sortedFeatures.toJSONString(false).getBytes());
         } catch (IOException ex) {
             throw new ProvisioningException(ex);
         }

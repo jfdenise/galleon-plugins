@@ -1071,11 +1071,15 @@ class FeatureSpecNode {
         if(standaloneDescr != null && generateStandalone) {
             persistSpec(standaloneName, standaloneDescr, STANDALONE_MODEL);
             if (!features.has(standaloneDescr.get("name").asString())) {
+                // All features are put flat in the exported file.
+                standaloneDescr.remove("children");
                 features.get(standaloneDescr.get("name").asString()).set(standaloneDescr);
             }
         } else {
             if (standaloneDescr != null && allFeatures) {
                 if (!features.has(standaloneDescr.get("name").asString())) {
+                    // All features are put flat in the exported file.
+                    standaloneDescr.remove("children");
                     features.get(standaloneDescr.get("name").asString()).set(standaloneDescr);
                 }
             }
