@@ -30,7 +30,6 @@ import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jboss.galleon.ProvisioningDescriptionException;
-import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.config.ConfigModel;
 import org.jboss.galleon.config.FeaturePackConfig;
 import org.jboss.galleon.spec.FeaturePackSpec.Family;
