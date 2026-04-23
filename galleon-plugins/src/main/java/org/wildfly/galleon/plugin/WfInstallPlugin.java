@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -60,8 +61,13 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 
+import nu.xom.Builder;
+import nu.xom.Document;
+import nu.xom.Element;
 import nu.xom.Elements;
+import nu.xom.ParsingException;
 import org.jboss.galleon.Errors;
+import org.jboss.galleon.ProvisioningDescriptionException;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.ProvisioningManager;
@@ -108,6 +114,8 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private static final String TRACK_COPY_CONFIGS = "JBCOPYCONFIGS";
     private static final String TRACK_ARTIFACTS_RESOLVE = "JB_ARTIFACTS_RESOLVE";
     private Optional<ArtifactRecorder> artifactRecorder;
+    private SbomArtifactRecorder sbomGenerator;
+    private String licenseMode;
 
     public interface ArtifactResolver {
         void resolve(MavenArtifact artifact) throws ProvisioningException;
@@ -155,6 +163,31 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private static final ProvisioningOption OPTION_BULK_RESOLVE_ARTIFACTS = ProvisioningOption.builder("jboss-bulk-resolve-artifacts").setBooleanValueSet().build();
     private static final ProvisioningOption OPTION_RECORD_ARTIFACTS = ProvisioningOption.builder("jboss-resolved-artifacts-cache")
             .setDefaultValue(".installation" + File.separator + ".cache")
+            .build();
+    /** License source: read {@code docs/licenses/*-licenses.xml} (the default). */
+    private static final String LICENSE_MODE_XML = "licenses.xml";
+    /** License source: resolve declared licenses from Maven POMs (remote). */
+    private static final String LICENSE_MODE_POM = "pom";
+    /** License collection disabled. */
+    private static final String LICENSE_MODE_OFF = "off";
+    private static final ProvisioningOption OPTION_CYCLONEDX = ProvisioningOption.builder("jboss-cyclonedx")
+            .setBooleanValueSet()
+            .build();
+    private static final ProvisioningOption OPTION_CYCLONEDX_FORMAT = ProvisioningOption.builder("jboss-cyclonedx-format")
+            .setDefaultValue("json")
+            .build();
+    private static final ProvisioningOption OPTION_CYCLONEDX_OUTPUT = ProvisioningOption.builder("jboss-cyclonedx-output")
+            .build();
+    private static final ProvisioningOption OPTION_CYCLONEDX_ONLY = ProvisioningOption.builder("jboss-cyclonedx-only")
+            .setBooleanValueSet()
+            .build();
+    private static final ProvisioningOption OPTION_CYCLONEDX_LICENSES = ProvisioningOption.builder("jboss-cyclonedx-licenses")
+            .setDefaultValue(LICENSE_MODE_XML)
+            .build();
+    private static final ProvisioningOption OPTION_CYCLONEDX_PRETTY_PRINT = ProvisioningOption.builder("jboss-cyclonedx-pretty-print")
+            .setBooleanValueSet()
+            .build();
+    private static final ProvisioningOption OPTION_CYCLONEDX_SCHEMA_VERSION = ProvisioningOption.builder("jboss-cyclonedx-schema-version")
             .build();
     private ProvisioningRuntime runtime;
     MessageWriter log;
@@ -211,7 +244,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                              OPTION_FORK_EMBEDDED, OPTION_MVN_REPO,
                              OPTION_RESET_EMBEDDED_SYSTEM_PROPERTIES,
                              OPTION_OVERRIDDEN_ARTIFACTS, OPTION_BULK_RESOLVE_ARTIFACTS,
-                             OPTION_RECORD_ARTIFACTS);
+                             OPTION_RECORD_ARTIFACTS,
+                             OPTION_CYCLONEDX, OPTION_CYCLONEDX_FORMAT,
+                             OPTION_CYCLONEDX_OUTPUT, OPTION_CYCLONEDX_ONLY,
+                             OPTION_CYCLONEDX_LICENSES, OPTION_CYCLONEDX_PRETTY_PRINT,
+                             OPTION_CYCLONEDX_SCHEMA_VERSION);
     }
 
     public ProvisioningRuntime getRuntime() {
@@ -271,7 +308,150 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             return false;
         }
         final String value = runtime.getOptionValue(option);
-        return value == null ? true : Boolean.parseBoolean(value);
+        return value == null || Boolean.parseBoolean(value);
+    }
+
+    private Optional<ArtifactRecorder> initArtifactRecorder(ProvisioningRuntime runtime) throws ProvisioningException {
+        final ArtifactRecorder txtRecorder = initTxtRecorder(runtime);
+        sbomGenerator = initSbomRecorder(runtime);
+
+        if (txtRecorder != null && sbomGenerator != null) {
+            return Optional.of(new ChainedArtifactRecorder(List.of(txtRecorder, sbomGenerator)));
+        }
+        if (txtRecorder != null) {
+            return Optional.of(txtRecorder);
+        }
+        if (sbomGenerator != null) {
+            return Optional.of(sbomGenerator);
+        }
+        return Optional.empty();
+    }
+
+    private ArtifactRecorder initTxtRecorder(ProvisioningRuntime runtime) throws ProvisioningException {
+        if (!runtime.isOptionSet(OPTION_RECORD_ARTIFACTS)) {
+            return null;
+        }
+        final String pathValue = runtime.getOptionValue(OPTION_RECORD_ARTIFACTS);
+        if (pathValue == null || pathValue.isEmpty()) {
+            return null;
+        }
+        try {
+            log.verbose("Starting artifact log");
+            return new ArtifactsTxtRecorder(runtime.getStagedDir(), Path.of(pathValue));
+        } catch (IOException e) {
+            throw new ProvisioningException("Unable to create artifact.log", e);
+        }
+    }
+
+    private SbomArtifactRecorder initSbomRecorder(ProvisioningRuntime runtime) throws ProvisioningException {
+        if (!getBooleanOption(OPTION_CYCLONEDX) && !getBooleanOption(OPTION_CYCLONEDX_ONLY)) {
+            return null;
+        }
+        final String format = resolveFormat(runtime);
+        final Path outputPath = resolveOutputPath(runtime, format);
+        licenseMode = resolveLicenseMode(runtime);
+        final boolean prettyPrint = getBooleanOption(OPTION_CYCLONEDX_PRETTY_PRINT);
+        final String schemaVersion = runtime.getOptionValue(OPTION_CYCLONEDX_SCHEMA_VERSION);
+        log.verbose("CycloneDX SBOM generation enabled, format=%s, output=%s, licenses=%s, prettyPrint=%s, schemaVersion=%s",
+                format, outputPath, licenseMode, prettyPrint, schemaVersion != null ? schemaVersion : "default");
+        final SbomArtifactRecorder recorder = new SbomArtifactRecorder(runtime.getStagedDir(), outputPath, format, prettyPrint);
+        try {
+            recorder.setSchemaVersion(schemaVersion);
+        } catch (IllegalArgumentException e) {
+            throw new ProvisioningException("Unsupported value for jboss-cyclonedx-schema-version: " + e.getMessage(), e);
+        }
+        return recorder;
+    }
+
+    private String resolveLicenseMode(ProvisioningRuntime runtime) throws ProvisioningException {
+        String value = runtime.getOptionValue(OPTION_CYCLONEDX_LICENSES);
+        if (value == null || value.isEmpty()) {
+            return LICENSE_MODE_XML;
+        }
+        value = value.trim();
+        if (value.equalsIgnoreCase(LICENSE_MODE_XML) || value.equalsIgnoreCase("true")) {
+            return LICENSE_MODE_XML;
+        }
+        if (value.equalsIgnoreCase(LICENSE_MODE_POM)) {
+            return LICENSE_MODE_POM;
+        }
+        if (value.equalsIgnoreCase(LICENSE_MODE_OFF) || value.equalsIgnoreCase("none")
+                || value.equalsIgnoreCase("false")) {
+            return LICENSE_MODE_OFF;
+        }
+        throw new ProvisioningException("Unsupported value for jboss-cyclonedx-licenses: '" + value
+                + "'. Expected one of: " + LICENSE_MODE_XML + ", " + LICENSE_MODE_POM + ", " + LICENSE_MODE_OFF + ".");
+    }
+
+    /**
+     * Builds and installs the license source on the SBOM recorder according to
+     * the resolved {@link #licenseMode}. Called just before the SBOM is written,
+     * once feature-pack content (from which {@code licenses.xml} is read) is
+     * available. A no-op when SBOM generation or license collection is off.
+     */
+    private void configureLicenseSource(ProvisioningRuntime runtime) throws ProvisioningException {
+        if (sbomGenerator == null || licenseMode == null || LICENSE_MODE_OFF.equals(licenseMode)) {
+            return;
+        }
+        if (LICENSE_MODE_POM.equals(licenseMode)) {
+            final MavenRepoManager mavenResolver =
+                    (MavenRepoManager) runtime.getArtifactResolver(MavenRepoManager.REPOSITORY_ID);
+            sbomGenerator.setLicenseSource(new PomLicenseResolver(mavenResolver));
+        } else {
+            final List<Path> summaries = collectLicenseSummaries(runtime);
+            log.verbose("CycloneDX: using %d licenses.xml summary file(s)", summaries.size());
+            sbomGenerator.setLicenseSource(LicensesXmlSource.from(summaries));
+        }
+    }
+
+    /**
+     * Collects the {@code docs/licenses/*-licenses.xml} summary files from all
+     * feature-pack package content. Reading from package content (rather than
+     * the staged distribution) means this works in SBOM-only mode too, where no
+     * files are installed.
+     */
+    private List<Path> collectLicenseSummaries(ProvisioningRuntime runtime) throws ProvisioningException {
+        final List<Path> result = new ArrayList<>();
+        for (FeaturePackRuntime fp : runtime.getFeaturePacks()) {
+            for (PackageRuntime pkg : fp.getPackages()) {
+                final Path contentDir = pkg.getContentDir();
+                if (contentDir == null) {
+                    continue;
+                }
+                final Path licensesDir = contentDir.resolve("docs").resolve("licenses");
+                if (!Files.isDirectory(licensesDir)) {
+                    continue;
+                }
+                try (Stream<Path> files = Files.list(licensesDir)) {
+                    files.filter(p -> p.getFileName().toString().endsWith("licenses.xml"))
+                            .forEach(result::add);
+                } catch (IOException e) {
+                    throw new ProvisioningException("Failed to list " + licensesDir, e);
+                }
+            }
+        }
+        return result;
+    }
+
+    private String resolveFormat(ProvisioningRuntime runtime) throws ProvisioningException {
+        if (runtime.isOptionSet(OPTION_CYCLONEDX_FORMAT)) {
+            final String value = runtime.getOptionValue(OPTION_CYCLONEDX_FORMAT);
+            if (value != null && !value.isEmpty()) {
+                return value;
+            }
+        }
+        return "json";
+    }
+
+    private Path resolveOutputPath(ProvisioningRuntime runtime, String format) throws ProvisioningException {
+        if (runtime.isOptionSet(OPTION_CYCLONEDX_OUTPUT)) {
+            final String value = runtime.getOptionValue(OPTION_CYCLONEDX_OUTPUT);
+            if (value != null && !value.isEmpty()) {
+                return Path.of(value);
+            }
+        }
+        final String fileName = "json".equalsIgnoreCase(format) ? "sbom.cdx.json" : "sbom.cdx.xml";
+        return runtime.getStagedDir().resolve(fileName);
     }
 
     @Override
@@ -309,19 +489,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             cacheOwner = false;
         }
         try {
-            if (runtime.isOptionSet(OPTION_RECORD_ARTIFACTS)) {
-                final String pathValue = runtime.getOptionValue(OPTION_RECORD_ARTIFACTS);
-                if (pathValue != null && !pathValue.isEmpty()) {
-                    try {
-                        log.verbose("Starting artifact log");
-                        artifactRecorder = Optional.of(new ArtifactRecorder(runtime.getStagedDir(), Path.of(pathValue)));
-                    } catch (IOException e) {
-                        throw new ProvisioningException("Unable to create artifact.log", e);
-                    }
-                }
-            } else {
-                artifactRecorder = Optional.empty();
-            }
+            artifactRecorder = initArtifactRecorder(runtime);
 
             this.bulkResolveArtifacts = isBulkResolveArtifacts();
 
@@ -418,6 +586,10 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 }
             }
             mergedArtifactVersions.putAll(overriddenArtifactVersions);
+            if (getBooleanOption(OPTION_CYCLONEDX_ONLY)) {
+                generateSbomOnly(runtime);
+                return;
+            }
             mergedTaskPropsResolver = new MapPropertyResolver(mergedTaskProps);
 
             // We must create resolver and installer at this point, prior to process the packges.
@@ -576,7 +748,8 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
             if (artifactRecorder.isPresent()) {
                 try {
-                    artifactRecorder.get().writeCacheManifest();
+                    configureLicenseSource(runtime);
+                    artifactRecorder.get().writeManifest();
                 } catch (IOException e) {
                     throw new ProvisioningException("Unable to record provisioned artifacts", e);
                 }
@@ -838,7 +1011,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             toResolve.add(jbossModuleArtifact);
             artifactGroupResolver.resolve(toResolve);
             if (artifactRecorder.isPresent()) {
-                artifactRecorder.get().cache(configGenArtifact, configGenArtifact.getPath());
+                try {
+                    artifactRecorder.get().recordToolDependency(configGenArtifact);
+                } catch (IOException e) {
+                    throw new ProvisioningException("Unable to record config-gen artifact", e);
+                }
             }
             for (MavenArtifact artifact : toResolve) {
                 urls.add(artifact.getPath().toUri().toURL());
@@ -1221,8 +1398,28 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             final Path jarTarget = runtime.getStagedDir().resolve(location);
             Files.createDirectories(jarTarget.getParent());
             model.buildJar(jarTarget);
+            recordShadedComponent(location, jarTarget, model, pkg);
         } catch (IOException e) {
             throw new ProvisioningException("Failed to copy shaded jar " + copyArtifact.getShadedModelPackage(), e);
+        }
+    }
+
+    private void recordShadedComponent(String toLocation, Path jarTarget, ShadedModel model, PackageRuntime pkg) {
+        if (sbomGenerator == null) {
+            return;
+        }
+        final String version = pkg.getFeaturePackRuntime().getFPID().getBuild();
+        final List<MavenArtifact> dependencies = getShadedDependencyCoords(model, pkg);
+        sbomGenerator.recordShadedComponent(toLocation, version, jarTarget, dependencies);
+    }
+
+    private List<MavenArtifact> getShadedDependencyCoords(ShadedModel model, PackageRuntime pkg) {
+        try {
+            return model.getDependencyCoords(mergedArtifactVersions, channelArtifactResolution,
+                    requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
+        } catch (Exception e) {
+            log.verbose("Failed to extract shaded dependency coordinates: %s", e.getMessage());
+            return List.of();
         }
     }
 
@@ -1265,7 +1462,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             if (copyArtifact.isExtract()) {
                 Utils.extractArtifact(jarSrc, jarTarget, copyArtifact);
                 if (artifactRecorder.isPresent()) {
-                    artifactRecorder.get().cache(artifact, jarSrc);
+                    try {
+                        artifactRecorder.get().record(artifact, jarTarget);
+                    } catch (IOException e) {
+                        throw new ProvisioningException("Unable to record extracted artifact", e);
+                    }
                 }
             } else {
                 if (artifactRecorder.isPresent()) {
@@ -1425,5 +1626,296 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             final Method m = configHandlerCls.getMethod(CONFIG_GEN_METHOD, ProvisioningRuntime.class, boolean.class, String.class);
             m.invoke(generator, runtime, forkEmbedded, resetEmbeddedSystemProperties);
         }
+    }
+
+    /**
+     * Generates a CycloneDX SBOM without provisioning the server.
+     *
+     * <p>Walks all included packages to discover artifact references from
+     * module templates, CopyArtifact tasks, and shaded model dependencies.
+     * Records each discovered artifact to the SBOM generator with no target
+     * path (no evidence/occurrences). Writes the SBOM and returns.</p>
+     *
+     * @param runtime the provisioning runtime
+     * @throws ProvisioningException if an error occurs during SBOM generation
+     */
+    private void generateSbomOnly(ProvisioningRuntime runtime) throws ProvisioningException {
+        log.verbose("CycloneDX SBOM-only mode: generating SBOM without provisioning");
+        if (sbomGenerator == null) {
+            throw new ProvisioningException("jboss-cyclonedx-only requires SBOM generator to be initialized");
+        }
+        try {
+            final Map<String, ShadedModelInfo> shadedModels = collectShadedModelInfo(runtime);
+            for (FeaturePackRuntime fp : runtime.getFeaturePacks()) {
+                for (PackageRuntime pkg : fp.getPackages()) {
+                    collectModuleArtifacts(pkg, sbomGenerator);
+                    collectTaskArtifacts(pkg, sbomGenerator, shadedModels);
+                }
+            }
+            // config-gen is resolved directly by the plugin in generateConfigs()
+            // rather than through module.xml or tasks.xml, so it must be recorded
+            // explicitly here since generateConfigs() is skipped in SBOM-only mode.
+            recordProvisioningToolArtifact(CONFIG_GEN_GA);
+            // Remove content provisioned by Galleon core so only the SBOM ends up in the target
+            final Path stagedDir = runtime.getStagedDir();
+            if (Files.exists(stagedDir)) {
+                try (Stream<Path> entries = Files.list(stagedDir)) {
+                    entries.forEach(IoUtils::recursiveDelete);
+                }
+                Files.createDirectories(stagedDir.resolve("standalone"));
+            }
+            configureLicenseSource(runtime);
+            sbomGenerator.writeManifest();
+        } catch (IOException e) {
+            throw new ProvisioningException("Failed to generate SBOM", e);
+        }
+    }
+
+    /**
+     * Records a provisioning tool artifact. These artifacts (such as
+     * config-gen) are resolved directly by the plugin rather than
+     * through module.xml or tasks.xml, so they must be recorded explicitly.
+     */
+    private void recordProvisioningToolArtifact(String ga) throws IOException, ProvisioningException {
+        if (!mergedArtifactVersions.containsKey(ga)) {
+            return;
+        }
+        final MavenArtifact artifact = Utils.toArtifactCoords(mergedArtifactVersions, ga,
+                false, channelArtifactResolution, requireChannel(gaToProducer.get(ga)));
+        sbomGenerator.recordToolDependency(artifact);
+    }
+
+    /**
+     * Collects shaded model info (name + dependency coordinates) for all packages,
+     * indexed by package name.
+     */
+    private Map<String, ShadedModelInfo> collectShadedModelInfo(ProvisioningRuntime runtime)
+            throws ProvisioningException, IOException {
+        final Map<String, ShadedModelInfo> result = new HashMap<>();
+        for (FeaturePackRuntime fp : runtime.getFeaturePacks()) {
+            for (PackageRuntime pkg : fp.getPackages()) {
+                final Path pmWfDir = pkg.getResource(WfConstants.PM, WfConstants.WILDFLY);
+                if (!Files.exists(pmWfDir)) {
+                    continue;
+                }
+                final Path shadedDir = pmWfDir.resolve(WfConstants.SHADED);
+                if (!Files.exists(shadedDir)) {
+                    continue;
+                }
+                final Path shadedModelFile = shadedDir.resolve(ShadedModel.FILE_NAME);
+                if (!Files.exists(shadedModelFile)) {
+                    continue;
+                }
+                try {
+                    final Builder builder = new Builder(false);
+                    final Document doc;
+                    try (BufferedReader reader = Files.newBufferedReader(shadedModelFile, StandardCharsets.UTF_8)) {
+                        doc = builder.build(reader);
+                    }
+                    final Element root = doc.getRootElement();
+                    final String version = fp.getFPID().getBuild();
+                    final List<MavenArtifact> deps = parseShadedDependencies(root, pkg);
+                    result.put(pkg.getName(), new ShadedModelInfo(version, deps));
+                } catch (ParsingException e) {
+                    throw new IOException("Failed to parse shaded model " + shadedModelFile, e);
+                }
+            }
+        }
+        return result;
+    }
+
+    private List<MavenArtifact> parseShadedDependencies(Element root, PackageRuntime pkg)
+            throws ProvisioningException {
+        final Element shadedDeps = root.getFirstChildElement("shaded-dependencies", root.getNamespaceURI());
+        if (shadedDeps == null) {
+            return List.of();
+        }
+        final List<MavenArtifact> result = new ArrayList<>();
+        final Elements dependencies = shadedDeps.getChildElements();
+        for (int i = 0; i < dependencies.size(); i++) {
+            final MavenArtifact artifact = Utils.toArtifactCoords(
+                    mergedArtifactVersions, dependencies.get(i).getValue(), false,
+                    channelArtifactResolution,
+                    requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
+            if (artifact != null) {
+                result.add(artifact);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Holds pre-parsed shaded model metadata for SBOM-only mode.
+     */
+    private static class ShadedModelInfo {
+        final String version;
+        final List<MavenArtifact> dependencies;
+
+        ShadedModelInfo(String version, List<MavenArtifact> dependencies) {
+            this.version = version;
+            this.dependencies = dependencies;
+        }
+    }
+
+    /**
+     * Walks module templates in a package to discover artifact references.
+     *
+     * <p>Finds all {@code module.xml} files in the package's module content
+     * directory, parses {@code <artifact name="...">} elements, resolves
+     * coordinates against the feature pack's artifact versions, and records
+     * each artifact to the recorder with a null target path.</p>
+     *
+     * @param pkg      the package to scan for module templates
+     * @param recorder the artifact recorder to record discovered artifacts
+     * @throws IOException           if an I/O error occurs reading module templates
+     * @throws ProvisioningException if artifact coordinate resolution fails
+     */
+    private void collectModuleArtifacts(PackageRuntime pkg, ArtifactRecorder recorder)
+            throws IOException, ProvisioningException {
+        final Path pmWfDir = pkg.getResource(WfConstants.PM, WfConstants.WILDFLY);
+        if (!Files.exists(pmWfDir)) {
+            return;
+        }
+        final Path moduleDir = pmWfDir.resolve(WfConstants.MODULE);
+        if (!Files.exists(moduleDir)) {
+            return;
+        }
+        final Map<String, String> versionProps = fpArtifactVersions.get(
+                pkg.getFeaturePackRuntime().getFPID().getProducer());
+        if (versionProps == null) {
+            return;
+        }
+        Files.walkFileTree(moduleDir, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                if (file.getFileName().toString().equals(WfConstants.MODULE_XML)) {
+                    collectArtifactsFromModuleXml(file, pkg, versionProps, recorder);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    private static final String RESOURCES_CLASSIFIER = "resources";
+
+    /**
+     * Parses a single module.xml template and records its artifact references.
+     *
+     * <p>Artifacts with a {@code resources} classifier are recorded via
+     * {@link ArtifactRecorder#recordResourceJar}.</p>
+     */
+    private void collectArtifactsFromModuleXml(Path moduleXml, PackageRuntime pkg,
+            Map<String, String> versionProps, ArtifactRecorder recorder) throws IOException {
+        try {
+            final ModuleTemplate template = new ModuleTemplate(pkg, moduleXml, moduleXml);
+            if (!template.isModule()) {
+                return;
+            }
+            final Elements artifacts = template.getArtifacts();
+            if (artifacts == null) {
+                return;
+            }
+            for (int i = 0; i < artifacts.size(); i++) {
+                final AbstractModuleTemplateProcessor.ModuleArtifact moduleArtifact =
+                        new AbstractModuleTemplateProcessor.ModuleArtifact(
+                                template, artifacts.get(i), versionProps, log, null,
+                                channelArtifactResolution,
+                                requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
+                final MavenArtifact artifact = moduleArtifact.getUnresolvedArtifact();
+                if (artifact != null) {
+                    if (isResourceJar(artifact) && sbomGenerator != null) {
+                        recordResolvedResourceJar(artifact);
+                    } else {
+                        recorder.record(artifact, null);
+                    }
+                }
+            }
+        } catch (ProvisioningDescriptionException e) {
+            throw new IOException("Failed to parse module template " + moduleXml, e);
+        }
+    }
+
+    /**
+     * Returns {@code true} if the artifact has a {@code resources} classifier,
+     * indicating it may contain bundled web resources such as JavaScript libraries.
+     */
+    private static boolean isResourceJar(MavenArtifact artifact) {
+        return RESOURCES_CLASSIFIER.equals(artifact.getClassifier());
+    }
+
+    /**
+     * Resolves a resource-classifier artifact and records it with the SBOM generator
+     * so that its bundled JavaScript libraries can be detected from source maps.
+     */
+    private void recordResolvedResourceJar(MavenArtifact artifact) throws IOException {
+        try {
+            maven.resolve(artifact);
+            sbomGenerator.recordResourceJar(artifact, null, artifact.getPath());
+        } catch (MavenUniverseException e) {
+            log.verbose("Failed to resolve resource JAR %s, recording without JS detection: %s",
+                    artifact, e.getMessage());
+            sbomGenerator.record(artifact, null);
+        }
+    }
+
+    /**
+     * Parses tasks.xml in a package to discover artifact references.
+     *
+     * <p>Handles both {@link CopyArtifact} tasks (recorded as flat components)
+     * and {@link AssembleShadedArtifact} tasks (recorded as shaded components
+     * with nested dependencies, using pre-collected shaded model info).</p>
+     *
+     * @param pkg           the package to scan for task artifact references
+     * @param recorder      the artifact recorder for CopyArtifact references
+     * @param sbomGenerator the SBOM generator for shaded components, may be null
+     * @param shadedModels  pre-collected shaded model info indexed by package name
+     * @throws IOException           if an I/O error occurs reading tasks.xml
+     * @throws ProvisioningException if task parsing or coordinate resolution fails
+     */
+    private void collectTaskArtifacts(PackageRuntime pkg, ArtifactRecorder recorder,
+            Map<String, ShadedModelInfo> shadedModels)
+            throws IOException, ProvisioningException {
+        final Path pmWfDir = pkg.getResource(WfConstants.PM, WfConstants.WILDFLY);
+        if (!Files.exists(pmWfDir)) {
+            return;
+        }
+        final Path tasksXml = pmWfDir.resolve(WfConstants.TASKS_XML);
+        if (!Files.exists(tasksXml)) {
+            return;
+        }
+        final WildFlyPackageTasks pkgTasks = WildFlyPackageTasks.load(tasksXml);
+        if (!pkgTasks.hasTasks()) {
+            return;
+        }
+        for (WildFlyPackageTask task : pkgTasks.getTasks()) {
+            if (task instanceof CopyArtifact) {
+                collectCopyArtifact((CopyArtifact) task, pkg, recorder);
+            } else if (task instanceof AssembleShadedArtifact && sbomGenerator != null) {
+                collectAssembleShadedArtifact((AssembleShadedArtifact) task, shadedModels);
+            }
+        }
+    }
+
+    private void collectCopyArtifact(CopyArtifact copyTask, PackageRuntime pkg,
+            ArtifactRecorder recorder) throws IOException, ProvisioningException {
+        final Map<String, String> versionProps = copyTask.isFeaturePackVersion()
+                ? fpArtifactVersions.get(pkg.getFeaturePackRuntime().getFPID().getProducer())
+                : mergedArtifactVersions;
+        final MavenArtifact artifact = Utils.toArtifactCoords(
+                versionProps, copyTask.getArtifact(),
+                copyTask.isOptional(), channelArtifactResolution,
+                requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
+        if (artifact != null) {
+            recorder.record(artifact, null);
+        }
+    }
+
+    private void collectAssembleShadedArtifact(AssembleShadedArtifact task,
+            Map<String, ShadedModelInfo> shadedModels) {
+        final ShadedModelInfo info = shadedModels.get(task.getShadedModelPackage());
+        if (info == null) {
+            return;
+        }
+        sbomGenerator.recordShadedComponent(task.getToLocation(), info.version, null, info.dependencies);
     }
 }

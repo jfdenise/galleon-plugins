@@ -151,6 +151,39 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
                 rootElement.getNamespaceURI()).getValue();
     }
 
+    /**
+     * Extracts dependency coordinates from the shaded model without resolving them.
+     *
+     * <p>Unlike {@link #getArtifacts()}, this method does not resolve artifacts
+     * from Maven or install them. It only parses the coordinate strings and
+     * resolves their versions from the provided version properties map.</p>
+     *
+     * @param versionProps              the merged artifact version properties
+     * @param channelArtifactResolution whether channel artifact resolution is enabled
+     * @param requireChannel            whether channel resolution is required
+     * @return the list of dependency artifacts with coordinates populated
+     * @throws ProvisioningException if coordinate parsing fails
+     */
+    public List<MavenArtifact> getDependencyCoords(Map<String, String> versionProps,
+            boolean channelArtifactResolution, boolean requireChannel) throws ProvisioningException {
+        final List<MavenArtifact> result = new ArrayList<>();
+        final Element shadedDependencies = rootElement.getFirstChildElement("shaded-dependencies",
+                rootElement.getNamespaceURI());
+        if (shadedDependencies == null) {
+            return result;
+        }
+        final Elements dependencies = shadedDependencies.getChildElements();
+        for (int i = 0; i < dependencies.size(); i++) {
+            final MavenArtifact artifact = Utils.toArtifactCoords(
+                    versionProps, dependencies.get(i).getValue(), false,
+                    channelArtifactResolution, requireChannel);
+            if (artifact != null) {
+                result.add(artifact);
+            }
+        }
+        return result;
+    }
+
     public void buildJar(Path shadedJar) throws IOException, ProvisioningException {
         if (log.isVerboseEnabled()) {
             log.verbose("Assembling shaded jar " + shadedJar);
