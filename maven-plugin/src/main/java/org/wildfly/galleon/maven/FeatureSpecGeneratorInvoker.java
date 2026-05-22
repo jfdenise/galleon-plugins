@@ -89,6 +89,45 @@ import org.wildfly.galleon.plugin.config.WildFlyPackageTasksParser;
  */
 public class FeatureSpecGeneratorInvoker {
 
+    private static final String ELYTRON_SUBSYSTEM = """
+                                                    <subsystem xmlns="urn:wildfly:elytron:19.0" final-providers="combined-providers" disallowed-providers="OracleUcrypto" register-jaspi-factory="false">
+                                                                <providers>
+                                                                    <aggregate-providers name="combined-providers">
+                                                                        <providers name="elytron"/>
+                                                                        <providers name="openssl"/>
+                                                                    </aggregate-providers>
+                                                                    <provider-loader name="elytron" module="org.wildfly.security.elytron"/>
+                                                                    <provider-loader name="openssl" module="org.wildfly.openssl"/>
+                                                                </providers>
+                                                                <security-domains>
+                                                                    <security-domain name="ManagementDomain" default-realm="local" permission-mapper="default-permission-mapper">
+                                                                        <realm name="local" role-mapper="super-user-mapper"/>
+                                                                    </security-domain>
+                                                                </security-domains>
+                                                                <security-realms>
+                                                                    <identity-realm name="local" identity="$local"/>
+                                                                </security-realms>
+                                                                <sasl>
+                                                                    <sasl-authentication-factory name="management-sasl-authentication" sasl-server-factory="configured" security-domain="ManagementDomain">
+                                                                        <mechanism-configuration>
+                                                                            <mechanism mechanism-name="JBOSS-LOCAL-USER" realm-mapper="local"/>
+                                                                        </mechanism-configuration>
+                                                                    </sasl-authentication-factory>
+                                                                    <configurable-sasl-server-factory name="configured" sasl-server-factory="elytron">
+                                                                        <properties>
+                                                                            <property name="wildfly.sasl.local-user.default-user" value="$local"/>
+                                                                            <property name="wildfly.sasl.local-user.challenge-path" value="${jboss.domain.temp.dir}/auth"/>
+                                                                        </properties>
+                                                                    </configurable-sasl-server-factory>
+                                                                    <mechanism-provider-filtering-sasl-server-factory name="elytron" sasl-server-factory="global">
+                                                                        <filters>
+                                                                            <filter provider-name="WildFlyElytron"/>
+                                                                        </filters>
+                                                                    </mechanism-provider-filtering-sasl-server-factory>
+                                                                    <provider-sasl-server-factory name="global"/>
+                                                                </sasl>
+                                                            </subsystem>
+                                                    """;
     private static final String MAVEN_REPO_LOCAL = "maven.repo.local";
 
     private static final String MODULES = "modules";
@@ -332,7 +371,7 @@ public class FeatureSpecGeneratorInvoker {
             lines.add("<management>");
             lines.add("<management-interfaces>");
             lines.add("<http-interface>");
-            lines.add("<http-upgrade enabled=\"true\"/>");
+            lines.add("<http-upgrade enabled=\"true\" sasl-authentication-factory=\"management-sasl-authentication\"/>");
             lines.add("<socket interface=\"management\" port=\"${jboss.management.http.port:9990}\"/>");
             lines.add("</http-interface>");
             lines.add("</management-interfaces>");
@@ -346,6 +385,9 @@ public class FeatureSpecGeneratorInvoker {
             lines.add("<inet-address value=\"127.0.0.1\"/>");
             lines.add("</interface>");
             lines.add("</interfaces>");
+            lines.add("<profile>");
+            lines.add(ELYTRON_SUBSYSTEM);
+            lines.add("</profile>");
             lines.add("</host>");
             Files.write(wildflyHome.resolve(WfConstants.DOMAIN).resolve(WfConstants.CONFIGURATION).resolve("host.xml"), lines);
         }
