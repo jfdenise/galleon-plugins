@@ -101,7 +101,7 @@ import org.wildfly.galleon.plugin.server.ForkedEmbeddedUtil;
  * @author Alexey Loubyansky
  */
 public class WfInstallPlugin extends ProvisioningPluginWithOptions implements InstallPlugin {
-
+    private static ThreadLocal<Map<MavenArtifact, MavenArtifact>> threadContext = new ThreadLocal<>();
     // If tooling used for provisioning has wildfly channels setup, the artifacts must be resolved from the channel
     public static final String REQUIRES_CHANNEL_FOR_ARTIFACT_RESOLUTION_PROPERTY = "org.wildfly.plugins.galleon.all.artifact.requires.channel.resolution";
     private static final String TRACK_MODULES_BUILD = "JBMODULES";
@@ -169,6 +169,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private List<WildFlyPackageTask> finalizingTasks = Collections.emptyList();
     private List<PackageRuntime> finalizingTasksPkgs = Collections.emptyList();
 
+    private List<WildFlyPackageTask> processingTasks = Collections.emptyList();
+    private List<PackageRuntime> processingTasksPkgs = Collections.emptyList();
+
     private DocumentBuilderFactory docBuilderFactory;
     private TransformerFactory xsltFactory;
     private Map<String, Transformer> xslTransformers = Collections.emptyMap();
@@ -189,7 +192,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     private boolean bulkResolveArtifacts;
 
-    private final Map<MavenArtifact, MavenArtifact> artifactCache = new HashMap<>();
+    private Map<MavenArtifact, MavenArtifact> artifactCache;
     private final Map<Path, ModuleTemplate> moduleTemplateCache = new HashMap<>();
 
     private final Map<String, String> resolvedVersionsProperties = new HashMap<>();
@@ -234,7 +237,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     }
 
     private boolean isBulkResolveArtifacts() throws ProvisioningException {
-        return getBooleanOption(OPTION_BULK_RESOLVE_ARTIFACTS);
+        if (!runtime.isOptionSet(OPTION_BULK_RESOLVE_ARTIFACTS)) {
+            return true;
+        }
+        final String value = runtime.getOptionValue(OPTION_BULK_RESOLVE_ARTIFACTS);
+        return value == null ? true : Boolean.parseBoolean(value);
     }
 
     private boolean isForkEmbedded(ProvisioningRuntime runtime) throws ProvisioningException {
@@ -281,6 +288,15 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     @Override
     public void postInstall(ProvisioningRuntime runtime) throws ProvisioningException {
         final long startTime = runtime.isLogTime() ? System.nanoTime() : -1;
+        // Retrieve the cache from the threadLocal in case we do provision example configs
+        artifactCache = threadContext.get();
+        if (artifactCache == null) {
+           System.out.println("Null CACHE, creating new one");
+           artifactCache =  new HashMap<>();
+           threadContext.set(artifactCache);
+        } else {
+            System.out.println("PRE-POPULATED CACHE " + artifactCache.size());
+        }
         this.runtime = runtime;
         log = runtime.getMessageWriter();
         log.verbose("WildFly Galleon Installation Plugin");
@@ -402,13 +418,14 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         artifactInstaller = new SimpleArtifactInstaller(artifactResolver, generatedMavenRepo, artifactRecorder);
 
         // Resolution of provisioning artifacts that we would need in the generated licenses.
+        List<MavenArtifact> lst = new ArrayList<>();
         MavenArtifact configGen = Utils.toArtifactCoords(mergedArtifactVersions, CONFIG_GEN_GA,
                 false, channelArtifactResolution, requireChannel(gaToProducer.get(CONFIG_GEN_GA)));
-        artifactResolver.resolve(configGen);
+        lst.add(configGen);
         MavenArtifact plugin = Utils.toArtifactCoords(mergedArtifactVersions, GALLEON_PLUGINS_GA,
                 false, channelArtifactResolution, requireChannel(gaToProducer.get(GALLEON_PLUGINS_GA)));
-        artifactResolver.resolve(plugin);
-
+        lst.add(plugin);
+        resolveMaven(lst);
         final ProvisioningLayoutFactory layoutFactory = runtime.getLayout().getFactory();
         pkgProgressTracker = layoutFactory.getProgressTracker(ProvisioningLayoutFactory.TRACK_PACKAGES);
         long pkgsTotal = 0;
@@ -452,7 +469,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             }
             modulesTracker.complete();
         }
-
+        if(!processingTasks.isEmpty()) {
+            for(int i = 0; i < processingTasks.size(); ++i) {
+                processingTasks.get(i).execute(this, processingTasksPkgs.get(i));
+            }
+        }
         final Path layersConf = runtime.getStagedDir().resolve(WfConstants.MODULES).resolve(WfConstants.LAYERS_CONF);
         if (Files.exists(layersConf)) {
             mergeLayerConfs(runtime);
@@ -467,14 +488,16 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 if (Files.exists(finalizeCli)) {
                     final URL[] cp = new URL[2];
                     try {
-                        MavenArtifact artifact = Utils.toArtifactCoords(mergedArtifactVersions, CONFIG_GEN_GA,
+                        List<MavenArtifact> artifacts = new ArrayList<>();
+                        MavenArtifact configGenArtifact = Utils.toArtifactCoords(mergedArtifactVersions, CONFIG_GEN_GA,
                                 false, channelArtifactResolution, requireChannel(gaToProducer.get(CONFIG_GEN_GA)));
-                        artifactResolver.resolve(artifact);
-                        cp[0] = artifact.getPath().toUri().toURL();
-                        artifact = Utils.toArtifactCoords(mergedArtifactVersions, WILDFLY_LAUNCHER_GA,
+                        artifacts.add(configGenArtifact);
+                        MavenArtifact launcherArtifact = Utils.toArtifactCoords(mergedArtifactVersions, WILDFLY_LAUNCHER_GA,
                                 false, channelArtifactResolution, requireChannel(gaToProducer.get(WILDFLY_LAUNCHER_GA)));
-                        artifactResolver.resolve(artifact);
-                        cp[1] = artifact.getPath().toUri().toURL();
+                        artifacts.add(launcherArtifact);
+                        resolveMaven(artifacts);
+                        cp[0] = configGenArtifact.getPath().toUri().toURL();
+                        cp[1] = launcherArtifact.getPath().toUri().toURL();
                     } catch (IOException e) {
                         throw new ProvisioningException("Failed to init classpath to run CLI finalize script for " + runtime.getStagedDir(), e);
                     }
@@ -596,15 +619,24 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 key.setClassifier(mavenArtifact.getClassifier());
                 key.setVersion(mavenArtifact.getVersion());
                 key.setVersionRange(mavenArtifact.getVersionRange());
-
-                artifactCache.put(key, mavenArtifact);
+                if (!artifactCache.containsKey(key)) {
+                    artifactCache.put(key, mavenArtifact);
+                }
             }
         }
     }
 
     private void resolveArtifactsInCache(ProgressTracker<MavenArtifact> tracker) throws ProvisioningException {
         try {
-            maven.resolveAll(addListener(artifactCache.values(), tracker));
+            // We should remove this constraint in the maven resolver, already resolved artifact should be ignored
+            // TODO in Galleon
+            List<MavenArtifact> lst = new ArrayList<>();
+            for(MavenArtifact ma : artifactCache.values()) {
+                if(!ma.isResolved()) {
+                    lst.add(ma);
+                }
+            }
+            maven.resolveAll(addListener(lst, tracker));
         } catch (MavenUniverseException e) {
             throw new ProvisioningException("Failed to resolve artifact", e);
         }
@@ -781,22 +813,32 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         List<URL> urlsEmbedded = new ArrayList<>();
         List<URL> cliDependencies = new ArrayList<>();
         try {
-            MavenArtifact artifact = Utils.toArtifactCoords(mergedArtifactVersions, CONFIG_GEN_GA,
+            // Bulk resolution of artifacts
+            List<MavenArtifact> toResolve = new ArrayList<>();
+            MavenArtifact configGenArtifact = Utils.toArtifactCoords(mergedArtifactVersions, CONFIG_GEN_GA,
                     false, channelArtifactResolution, requireChannel(gaToProducer.get(CONFIG_GEN_GA)));
-            artifactResolver.resolve(artifact);
-            if (artifactRecorder.isPresent()) {
-                artifactRecorder.get().cache(artifact, artifact.getPath());
-            }
-            urls.add(artifact.getPath().toUri().toURL());
+            toResolve.add(configGenArtifact);
             ShadedModel model = shadedPackages.get("org.wildfly.core.wildfly-cli.shaded");
+            MavenArtifact cliShadedArtifact = null;
             if (model == null) {
                 // This can occur in tests that rely on WildFly version that doesn't contain shaded models.
                 log.print("WARNING: defaulting to wildfly-cli:client shaded jar.");
-                artifact = Utils.toArtifactCoords(mergedArtifactVersions, WILDFLY_CLI_GA+"::client",
+                cliShadedArtifact = Utils.toArtifactCoords(mergedArtifactVersions, WILDFLY_CLI_GA+"::client",
                     false, channelArtifactResolution, requireChannel(gaToProducer.get(WILDFLY_CLI_GA)));
-                artifactResolver.resolve(artifact);
+                toResolve.add(cliShadedArtifact);
+            }
+            MavenArtifact jbossModuleArtifact = Utils.toArtifactCoords(mergedArtifactVersions, JBOSS_MODULES_GA,
+                    false, channelArtifactResolution, requireChannel(gaToProducer.get(JBOSS_MODULES_GA)));
+            toResolve.add(jbossModuleArtifact);
+            this.resolveMaven(toResolve);
+            if (artifactRecorder.isPresent()) {
+                artifactRecorder.get().cache(configGenArtifact, configGenArtifact.getPath());
+            }
+            for (MavenArtifact artifact : toResolve) {
                 urls.add(artifact.getPath().toUri().toURL());
-                urlsEmbedded.add(artifact.getPath().toUri().toURL());
+            }
+            if (model == null) {
+                urlsEmbedded.add(cliShadedArtifact.getPath().toUri().toURL());
             } else {
                 for (MavenArtifact a : model.getArtifacts()) {
                     cliDependencies.add(a.getPath().toUri().toURL());
@@ -807,10 +849,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             cp = new URL[urls.size()];
             cp = urls.toArray(cp);
 
-            artifact = Utils.toArtifactCoords(mergedArtifactVersions, JBOSS_MODULES_GA,
-                    false, channelArtifactResolution, requireChannel(gaToProducer.get(JBOSS_MODULES_GA)));
-            artifactResolver.resolve(artifact);
-            urlsEmbedded.add(artifact.getPath().toUri().toURL());
+            urlsEmbedded.add(jbossModuleArtifact.getPath().toUri().toURL());
             cpEmbedded = new URL[urlsEmbedded.size()];
             cpEmbedded = urlsEmbedded.toArray(cpEmbedded);
 
@@ -879,7 +918,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                             requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()),
                             shadedDir.resolve(ShadedModel.FILE_NAME),
                             runtime.getTmpPath(),
-                            artifactResolver, log, mergedArtifactVersions, artifactInstaller, channelArtifactResolution, artifactRecorder));
+                            log, mergedArtifactVersions, artifactInstaller, channelArtifactResolution, artifactRecorder, this));
                 } catch (IOException ex) {
                     throw new ProvisioningException(ex);
                 }
@@ -907,10 +946,23 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     log.verbose("Processing %s package %s tasks", fp.getFPID(), pkg.getName());
                     for (WildFlyPackageTask task : pkgTasks.getTasks()) {
                         if (task.getPhase() == WildFlyPackageTask.Phase.PROCESSING) {
-                            task.execute(this, pkg);
+                            if (bulkResolveArtifacts) {
+                                if (task instanceof CopyArtifact copyArtifact) {
+                                    final MavenArtifact artifactToCopy = toArtifact(copyArtifact, pkg);
+                                    artifactCache.put(artifactToCopy, artifactToCopy);
+                                }
+                                processingTasks = CollectionUtils.add(processingTasks, task);
+                                processingTasksPkgs = CollectionUtils.add(processingTasksPkgs, pkg);
+                            } else {
+                                task.execute(this, pkg);
+                            }
                         } else {
                             finalizingTasks = CollectionUtils.add(finalizingTasks, task);
                             finalizingTasksPkgs = CollectionUtils.add(finalizingTasksPkgs, pkg);
+                            if (task instanceof CopyArtifact copyArtifact) {
+                                final MavenArtifact artifactToCopy = toArtifact(copyArtifact, pkg);
+                                artifactCache.put(artifactToCopy, artifactToCopy);
+                            }
                         }
                     }
                 }
@@ -1140,11 +1192,16 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         }
     }
 
-    public void copyArtifact(CopyArtifact copyArtifact, PackageRuntime pkg) throws ProvisioningException {
+    public MavenArtifact toArtifact(CopyArtifact copyArtifact, PackageRuntime pkg) throws ProvisioningException {
         final MavenArtifact artifact = Utils.toArtifactCoords(copyArtifact.isFeaturePackVersion() ? fpArtifactVersions.get(pkg.getFeaturePackRuntime().getFPID().getProducer())
-                        : mergedArtifactVersions,
+                : mergedArtifactVersions,
                 copyArtifact.getArtifact(), copyArtifact.isOptional(),
                 channelArtifactResolution, requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
+        return artifact;
+    }
+
+    public void copyArtifact(CopyArtifact copyArtifact, PackageRuntime pkg) throws ProvisioningException {
+        final MavenArtifact artifact = toArtifact(copyArtifact, pkg);
         if(artifact == null) {
             return;
         }
@@ -1290,16 +1347,31 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         }
     }
 
+    // Resolve or lookup the cache and add to the cache.
     void resolveMaven(MavenArtifact artifact) throws ProvisioningException {
-        if (bulkResolveArtifacts && artifactCache.containsKey(artifact)) {
+        if (artifactCache.containsKey(artifact)) {
             final MavenArtifact resolvedArtifact = artifactCache.get(artifact);
             artifact.setVersion(resolvedArtifact.getVersion());
             artifact.setPath(resolvedArtifact.getPath());
         } else {
-            maven.resolve(artifact);
+            if (!artifact.isResolved()) {
+                System.out.println("MUST RESOLVE LOCALLY, NOT IN THE CACHE " + artifact);
+                maven.resolve(artifact);
+                artifactCache.put(artifact, artifact);
+            }
         }
         // These properties are present in *-licenses.xml and must be replaced by the resolved ones.
         resolvedVersionsProperties.put("version."+artifact.getGroupId()+"."+artifact.getArtifactId(), artifact.getVersion());
+    }
+
+    // Resolve and add to the cache
+    void resolveMaven(Collection<MavenArtifact> artifacts) throws ProvisioningException {
+        maven.resolveAll(artifacts);
+        for(MavenArtifact artifact : artifacts) {
+            artifactCache.put(artifact, artifact);
+            // These properties are present in *-licenses.xml and must be replaced by the resolved ones.
+            resolvedVersionsProperties.put("version."+artifact.getGroupId()+"."+artifact.getArtifactId(), artifact.getVersion());
+        }
     }
 
     boolean isOverriddenArtifact(MavenArtifact artifact) throws ProvisioningException {
