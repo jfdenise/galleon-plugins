@@ -576,6 +576,12 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         if (startTime > 0) {
             log.print(Errors.tookTime("Overall WildFly Galleon Plugin", startTime));
         }
+//        System.out.println("XXXXXXXXXXXXXX");
+//        for (MavenArtifact artifact : artifactCache.values()) {
+//            if (!artifact.getVersion().contains("SNAPSHOT")) {
+//                System.out.println("rm -f " + artifact.getPath());
+//            }
+//        }
     }
 
     private void populateArtifactCache() throws ProvisioningException {
@@ -612,16 +618,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
             final MavenArtifact mavenArtifact = moduleArtifact.getUnresolvedArtifact();
             if (mavenArtifact != null) {
-                final MavenArtifact key = new MavenArtifact();
-                key.setGroupId(mavenArtifact.getGroupId());
-                key.setArtifactId(mavenArtifact.getArtifactId());
-                key.setExtension(mavenArtifact.getExtension());
-                key.setClassifier(mavenArtifact.getClassifier());
-                key.setVersion(mavenArtifact.getVersion());
-                key.setVersionRange(mavenArtifact.getVersionRange());
-                if (!artifactCache.containsKey(key)) {
-                    artifactCache.put(key, mavenArtifact);
-                }
+                putArtifactInCache(mavenArtifact);
             }
         }
     }
@@ -636,7 +633,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     lst.add(ma);
                 }
             }
+            long t = System.currentTimeMillis();
             maven.resolveAll(addListener(lst, tracker));
+            System.out.println("Large cache resolv " + (System.currentTimeMillis() - t));
         } catch (MavenUniverseException e) {
             throw new ProvisioningException("Failed to resolve artifact", e);
         }
@@ -949,7 +948,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                             if (bulkResolveArtifacts) {
                                 if (task instanceof CopyArtifact copyArtifact) {
                                     final MavenArtifact artifactToCopy = toArtifact(copyArtifact, pkg);
-                                    artifactCache.put(artifactToCopy, artifactToCopy);
+                                    putArtifactInCache(artifactToCopy);
                                 }
                                 processingTasks = CollectionUtils.add(processingTasks, task);
                                 processingTasksPkgs = CollectionUtils.add(processingTasksPkgs, pkg);
@@ -961,7 +960,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                             finalizingTasksPkgs = CollectionUtils.add(finalizingTasksPkgs, pkg);
                             if (task instanceof CopyArtifact copyArtifact) {
                                 final MavenArtifact artifactToCopy = toArtifact(copyArtifact, pkg);
-                                artifactCache.put(artifactToCopy, artifactToCopy);
+                                putArtifactInCache(artifactToCopy);
                             }
                         }
                     }
@@ -986,6 +985,29 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         }
     }
 
+    private void putArtifactInCache(MavenArtifact a) {
+        putArtifactInCache(computeKey(a), a);
+    }
+    private void putArtifactInCache(MavenArtifact k, MavenArtifact a) {
+        if(!artifactCache.containsKey(k)) {
+            //System.out.println("ADD TO CACHE RESOLVED : " + a);
+            artifactCache.put(k, a);
+        }
+    }
+
+    private MavenArtifact getArtifactFromCache(MavenArtifact a) {
+        MavenArtifact k = computeKey(a);
+        return artifactCache.get(k);
+    }
+
+    private MavenArtifact computeKey(MavenArtifact a) {
+        MavenArtifact k = new MavenArtifact();
+        k.setGroupId(a.getGroupId());
+        k.setArtifactId(a.getArtifactId());
+        k.setClassifier(a.getClassifier());
+        k.setExtension(a.getExtension());
+        return k;
+    }
     public void xslTransform(PackageRuntime pkg, XslTransform xslt) throws ProvisioningException {
 
         final Path src = runtime.getStagedDir().resolve(xslt.getSrc());
@@ -1349,15 +1371,16 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     // Resolve or lookup the cache and add to the cache.
     void resolveMaven(MavenArtifact artifact) throws ProvisioningException {
-        if (artifactCache.containsKey(artifact)) {
-            final MavenArtifact resolvedArtifact = artifactCache.get(artifact);
-            artifact.setVersion(resolvedArtifact.getVersion());
-            artifact.setPath(resolvedArtifact.getPath());
+        MavenArtifact key = computeKey(artifact);
+        MavenArtifact cachedArtifact = artifactCache.get(key);
+        if (cachedArtifact != null) {
+            artifact.setVersion(cachedArtifact.getVersion());
+            artifact.setPath(cachedArtifact.getPath());
         } else {
             if (!artifact.isResolved()) {
                 System.out.println("MUST RESOLVE LOCALLY, NOT IN THE CACHE " + artifact);
                 maven.resolve(artifact);
-                artifactCache.put(artifact, artifact);
+                putArtifactInCache(key, artifact);
             }
         }
         // These properties are present in *-licenses.xml and must be replaced by the resolved ones.
@@ -1368,7 +1391,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     void resolveMaven(Collection<MavenArtifact> artifacts) throws ProvisioningException {
         maven.resolveAll(artifacts);
         for(MavenArtifact artifact : artifacts) {
-            artifactCache.put(artifact, artifact);
+            putArtifactInCache(artifact);
             // These properties are present in *-licenses.xml and must be replaced by the resolved ones.
             resolvedVersionsProperties.put("version."+artifact.getGroupId()+"."+artifact.getArtifactId(), artifact.getVersion());
         }
