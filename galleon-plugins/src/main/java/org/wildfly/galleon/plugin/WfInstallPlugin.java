@@ -576,12 +576,20 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         if (startTime > 0) {
             log.print(Errors.tookTime("Overall WildFly Galleon Plugin", startTime));
         }
-//        System.out.println("XXXXXXXXXXXXXX");
-//        for (MavenArtifact artifact : artifactCache.values()) {
-//            if (!artifact.getVersion().contains("SNAPSHOT")) {
-//                System.out.println("rm -f " + artifact.getPath());
-//            }
-//        }
+        Path f = Paths.get("rm-files-from-maven-cache.sh");
+        System.out.println("Generating script to " + f.toAbsolutePath());
+        StringBuilder strBuilder = new StringBuilder();
+        strBuilder.append("# Script to rm all artifacts that have been resolved from the cache\n");
+        for (MavenArtifact artifact : artifactCache.values()) {
+            if (!artifact.getVersion().contains("SNAPSHOT")) {
+                strBuilder.append("rm -f " + artifact.getPath() + "\n");
+            }
+        }
+        try {
+            Files.writeString(f, strBuilder.toString());
+        } catch(Exception ex) {
+            log.error(ex, ex.getLocalizedMessage());
+        }
     }
 
     private void populateArtifactCache() throws ProvisioningException {
@@ -635,7 +643,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             }
             long t = System.currentTimeMillis();
             maven.resolveAll(addListener(lst, tracker));
-            System.out.println("Large cache resolv " + (System.currentTimeMillis() - t));
+            System.out.println("Large cache resolv " + (System.currentTimeMillis() - t) + " size: " + artifactCache.size());
         } catch (MavenUniverseException e) {
             throw new ProvisioningException("Failed to resolve artifact", e);
         }
