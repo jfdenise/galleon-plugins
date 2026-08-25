@@ -75,7 +75,7 @@ class InstalledModule {
     }
 
     void addResourceRoot(String path) {
-        Element resource = new Element("resource-root");
+        Element resource = new Element("resource-root", rootElement.getNamespaceURI());
         resource.addAttribute(new Attribute("path", path));
         getResourcesElement().appendChild(resource);
     }

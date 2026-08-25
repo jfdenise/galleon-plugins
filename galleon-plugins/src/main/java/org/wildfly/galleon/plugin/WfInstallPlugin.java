@@ -1322,23 +1322,47 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 List<Path> classPath = new ArrayList<>();
                 Path sourceDir = locationPath.resolve("generated-sources");
                 Path classesDir = locationPath.resolve("translations");
-                System.out.println("NUM OF RESOURCES " + resourceRoots.size());
+                //System.out.println("GENERATING FOR " + locationPath);
                 // Compute the dependencies...
                 for(Element dep : module.getDependencies()) {
                     String moduleName = dep.getAttribute("name").getValue();
                     moduleName = moduleName.replace(".","/");
                     moduleName += "/main";
                     Path depPath = runtime.getStagedDir().resolve("modules/system/layers/base/" + moduleName);
+                    //System.out.println("DEPENDENCY PATH " + depPath + " rxists " + Files.exists(depPath));
                     if(Files.exists(depPath)) {
                         Path depXml = depPath.resolve("module.xml");
                         InstalledModule depModule = new InstalledModule(depXml, depXml);
                         Elements elems = depModule.getResourceRoots();
-                        if (elems != null) {
+                        if (elems != null && elems.size() != 0) {
                             for (Element elem : elems) {
                                 String resourcePath = elem.getAttribute("path").getValue();
                                 Path absolutePath = depXml.getParent().resolve(resourcePath);
                                 classPath.add(absolutePath);
-                                log.print("Adding " + absolutePath + " to classpath for logging");
+                                //log.print("Adding " + absolutePath + " to classpath for logging");
+                            }
+                        } else {
+                            //log.print("DEP " + moduleName + " HAS NO RESOURCES");
+                            //Handle the dependencies...
+                            for(Element depdep : depModule.getDependencies()) {
+                                String depmoduleName = depdep.getAttribute("name").getValue();
+                                //log.print("DEP MODULE NAME " + depmoduleName);
+                                depmoduleName = depmoduleName.replace(".","/");
+                                depmoduleName += "/main";
+                                Path depdepPath = runtime.getStagedDir().resolve("modules/system/layers/base/" + depmoduleName);
+                                if(Files.exists(depdepPath)) {
+                                    Path depdepXml = depdepPath.resolve("module.xml");
+                                    InstalledModule depdepModule = new InstalledModule(depdepXml, depdepXml);
+                                    Elements depelems = depdepModule.getResourceRoots();
+                                    if (depelems != null) {
+                                        for (Element elem : depelems) {
+                                            String resourcePath = elem.getAttribute("path").getValue();
+                                            Path absolutePath = depdepXml.getParent().resolve(resourcePath);
+                                            classPath.add(absolutePath);
+                                            log.print("Adding " + absolutePath + " to classpath for logging");
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1350,8 +1374,11 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     log.print("Adding " + absolutePath + " to scan for logging");
                 }
                 toScan.add(artifact.getPath());
-                // Add the putput dir to the classpath
-                //classPath.add(classesDir);
+                // JBoss Modules added to the classpath
+                MavenArtifact jbossModuleArtifact = Utils.toArtifactCoords(mergedArtifactVersions, JBOSS_MODULES_GA,
+                    false, channelArtifactResolution, requireChannel(gaToProducer.get(JBOSS_MODULES_GA)));
+                artifactResolver.resolve(jbossModuleArtifact);
+                classPath.add(jbossModuleArtifact.getPath());
                 LoggerClassGenerator generator = new LoggerClassGenerator(sourceDir);
                 generator.generate(toScan, classPath, classesDir, true);
                 module.addResourceRoot(classesDir.getFileName().toString());
