@@ -59,6 +59,7 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
+import nu.xom.Element;
 
 import nu.xom.Elements;
 import org.jboss.galleon.Errors;
@@ -87,11 +88,13 @@ import org.jboss.galleon.universe.maven.repo.MavenRepoManager;
 import org.jboss.galleon.util.IoUtils;
 import org.jboss.galleon.util.CollectionUtils;
 import org.jboss.galleon.util.ZipUtils;
+import org.jboss.logging.tools.provisioning.generator.LoggerClassGenerator;
 import org.wildfly.galleon.plugin.config.AssembleShadedArtifact;
 import org.wildfly.galleon.plugin.config.CopyArtifact;
 import org.wildfly.galleon.plugin.config.CopyPath;
 import org.wildfly.galleon.plugin.config.DeletePath;
 import org.wildfly.galleon.plugin.config.ExampleFpConfigs;
+import org.wildfly.galleon.plugin.config.GenerateLogging;
 import org.wildfly.galleon.plugin.config.LineEndingsTask;
 import org.wildfly.galleon.plugin.config.XslTransform;
 import org.wildfly.galleon.plugin.server.ForkedEmbeddedUtil;
@@ -1233,6 +1236,13 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 channelArtifactResolution, requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
         return artifact;
     }
+    public MavenArtifact toArtifact(GenerateLogging generateLogging, PackageRuntime pkg) throws ProvisioningException {
+        final MavenArtifact artifact = Utils.toArtifactCoords(generateLogging.isFeaturePackVersion() ? fpArtifactVersions.get(pkg.getFeaturePackRuntime().getFPID().getProducer())
+                : mergedArtifactVersions,
+                generateLogging.getArtifact(), generateLogging.isOptional(),
+                channelArtifactResolution, requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
+        return artifact;
+    }
 
     public void copyArtifact(CopyArtifact copyArtifact, PackageRuntime pkg) throws ProvisioningException {
         final MavenArtifact artifact = toArtifact(copyArtifact, pkg);
@@ -1284,6 +1294,76 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             }
         } catch (IOException e) {
             throw new ProvisioningException("Failed to copy artifact " + artifact, e);
+        }
+    }
+
+    public void generateLogging(GenerateLogging generateLogging, PackageRuntime pkg) throws ProvisioningException {
+        final MavenArtifact artifact = toArtifact(generateLogging, pkg);
+        if(artifact == null) {
+            return;
+        }
+        try {
+            log.verbose("Resolving artifact %s ", artifact);
+            artifactResolver.resolve(artifact);
+            if (channelArtifactResolution) {
+                log.verbose("Resolved artifact %s ", artifact);
+            }
+            String location = generateLogging.getToLocation();
+            final Path locationPath = runtime.getStagedDir().resolve(location);
+            if (!Files.exists(locationPath)) {
+                throw new ProvisioningException("Module " + location + "doesn't exist, can't generate logging");
+            }
+            Path moduleXmlFile = locationPath.resolve("module.xml");
+            InstalledModule module = new InstalledModule(moduleXmlFile, moduleXmlFile);
+            // XXX TODO handle thin module...
+            Elements resourceRoots = module.getResourceRoots();
+            if (resourceRoots != null && resourceRoots.size() != 0) {
+                List<Path> toScan = new ArrayList<>();
+                List<Path> classPath = new ArrayList<>();
+                Path sourceDir = locationPath.resolve("generated-sources");
+                Path classesDir = locationPath.resolve("translations");
+                System.out.println("NUM OF RESOURCES " + resourceRoots.size());
+                // Compute the dependencies...
+                for(Element dep : module.getDependencies()) {
+                    String moduleName = dep.getAttribute("name").getValue();
+                    moduleName = moduleName.replace(".","/");
+                    moduleName += "/main";
+                    Path depPath = runtime.getStagedDir().resolve("modules/system/layers/base/" + moduleName);
+                    if(Files.exists(depPath)) {
+                        Path depXml = depPath.resolve("module.xml");
+                        InstalledModule depModule = new InstalledModule(depXml, depXml);
+                        Elements elems = depModule.getResourceRoots();
+                        if (elems != null) {
+                            for (Element elem : elems) {
+                                String resourcePath = elem.getAttribute("path").getValue();
+                                Path absolutePath = depXml.getParent().resolve(resourcePath);
+                                classPath.add(absolutePath);
+                                log.print("Adding " + absolutePath + " to classpath for logging");
+                            }
+                        }
+                    }
+                }
+                for (Element elem : resourceRoots) {
+                    String resourcePath = elem.getAttribute("path").getValue();
+                    Path absolutePath = locationPath.resolve(resourcePath);
+                    toScan.add(absolutePath);
+                    log.print("Adding " + absolutePath + " to scan for logging");
+                }
+                toScan.add(artifact.getPath());
+                // Add the putput dir to the classpath
+                //classPath.add(classesDir);
+                LoggerClassGenerator generator = new LoggerClassGenerator(sourceDir);
+                generator.generate(toScan, classPath, classesDir, true);
+                module.addResourceRoot(classesDir.getFileName().toString());
+                module.store();
+            } else {
+                throw new ProvisioningException("Translation required but no artifact in module " + location);
+            }
+        } catch (Exception e) {
+            if (e instanceof ProvisioningException) {
+                throw (ProvisioningException) e;
+            }
+            throw new ProvisioningException("Failed to generate logging " + artifact, e);
         }
     }
 
