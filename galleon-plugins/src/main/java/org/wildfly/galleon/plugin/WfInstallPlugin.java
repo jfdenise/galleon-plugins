@@ -43,6 +43,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -1297,6 +1298,42 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         }
     }
 
+    private InstalledModule buildModule(String moduleName) throws Exception {
+        InstalledModule module = null;
+        moduleName = moduleName.replace(".", "/");
+        moduleName += "/main";
+        Path modulePath = runtime.getStagedDir().resolve("modules/system/layers/base/" + moduleName);
+        if (Files.exists(modulePath)) {
+            Path moduleXmlFile = modulePath.resolve("module.xml");
+            module = new InstalledModule(moduleXmlFile, moduleXmlFile);
+        }
+        return module;
+    }
+    private void computeFullClassPath(InstalledModule module, Set<Path> paths, Set<String> seen) throws Exception {
+        if (seen.contains(module.getName())) {
+            return;
+        }
+        seen.add(module.getName());
+        Elements resourceRoots = module.getResourceRoots();
+        if (resourceRoots != null && resourceRoots.size() != 0) {
+            for (Element elem : resourceRoots) {
+                String resourcePath = elem.getAttribute("path").getValue();
+                Path absolutePath = module.getDescriptor().getParent().resolve(resourcePath);
+                paths.add(absolutePath);
+            }
+        }
+        Elements deps = module.getDependencies();
+        if (deps != null) {
+            for (Element dep : module.getDependencies()) {
+                String moduleName = dep.getAttribute("name").getValue();
+                InstalledModule depModule = buildModule(moduleName);
+                if (depModule == null) {
+                    continue;
+                }
+                computeFullClassPath(depModule, paths, seen);
+            }
+        }
+    }
     public void generateLogging(GenerateLogging generateLogging, PackageRuntime pkg) throws ProvisioningException {
         final MavenArtifact artifact = toArtifact(generateLogging, pkg);
         if(artifact == null) {
@@ -1319,54 +1356,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             Elements resourceRoots = module.getResourceRoots();
             if (resourceRoots != null && resourceRoots.size() != 0) {
                 List<Path> toScan = new ArrayList<>();
-                List<Path> classPath = new ArrayList<>();
+                Set<Path> classPath = new HashSet<>();
                 Path sourceDir = locationPath.resolve("generated-sources");
                 Path classesDir = locationPath.resolve("translations");
-                //System.out.println("GENERATING FOR " + locationPath);
-                // Compute the dependencies...
-                for(Element dep : module.getDependencies()) {
-                    String moduleName = dep.getAttribute("name").getValue();
-                    moduleName = moduleName.replace(".","/");
-                    moduleName += "/main";
-                    Path depPath = runtime.getStagedDir().resolve("modules/system/layers/base/" + moduleName);
-                    //System.out.println("DEPENDENCY PATH " + depPath + " rxists " + Files.exists(depPath));
-                    if(Files.exists(depPath)) {
-                        Path depXml = depPath.resolve("module.xml");
-                        InstalledModule depModule = new InstalledModule(depXml, depXml);
-                        Elements elems = depModule.getResourceRoots();
-                        if (elems != null && elems.size() != 0) {
-                            for (Element elem : elems) {
-                                String resourcePath = elem.getAttribute("path").getValue();
-                                Path absolutePath = depXml.getParent().resolve(resourcePath);
-                                classPath.add(absolutePath);
-                                //log.print("Adding " + absolutePath + " to classpath for logging");
-                            }
-                        } else {
-                            //log.print("DEP " + moduleName + " HAS NO RESOURCES");
-                            //Handle the dependencies...
-                            for(Element depdep : depModule.getDependencies()) {
-                                String depmoduleName = depdep.getAttribute("name").getValue();
-                                //log.print("DEP MODULE NAME " + depmoduleName);
-                                depmoduleName = depmoduleName.replace(".","/");
-                                depmoduleName += "/main";
-                                Path depdepPath = runtime.getStagedDir().resolve("modules/system/layers/base/" + depmoduleName);
-                                if(Files.exists(depdepPath)) {
-                                    Path depdepXml = depdepPath.resolve("module.xml");
-                                    InstalledModule depdepModule = new InstalledModule(depdepXml, depdepXml);
-                                    Elements depelems = depdepModule.getResourceRoots();
-                                    if (depelems != null) {
-                                        for (Element elem : depelems) {
-                                            String resourcePath = elem.getAttribute("path").getValue();
-                                            Path absolutePath = depdepXml.getParent().resolve(resourcePath);
-                                            classPath.add(absolutePath);
-                                            log.print("Adding " + absolutePath + " to classpath for logging");
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
                 for (Element elem : resourceRoots) {
                     String resourcePath = elem.getAttribute("path").getValue();
                     Path absolutePath = locationPath.resolve(resourcePath);
@@ -1379,14 +1371,30 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     false, channelArtifactResolution, requireChannel(gaToProducer.get(JBOSS_MODULES_GA)));
                 artifactResolver.resolve(jbossModuleArtifact);
                 classPath.add(jbossModuleArtifact.getPath());
+                // Compute the full transitive classpath from module dependencies
+                Elements deps = module.getDependencies();
+                if (deps != null) {
+                    Set<String> seen = new HashSet<>();
+                    for (Element dep : module.getDependencies()) {
+                        String moduleName = dep.getAttribute("name").getValue();
+                        InstalledModule depModule = buildModule(moduleName);
+                        if (depModule == null) {
+                            continue;
+                        }
+                        computeFullClassPath(depModule, classPath, seen);
+                    }
+                }
                 LoggerClassGenerator generator = new LoggerClassGenerator(sourceDir);
-                generator.generate(toScan, classPath, classesDir, true);
+                generator.generate(toScan, classPath.stream().collect(Collectors.toList()),
+                        classesDir, true);
                 module.addResourceRoot(classesDir.getFileName().toString());
                 module.store();
             } else {
                 throw new ProvisioningException("Translation required but no artifact in module " + location);
             }
         } catch (Exception e) {
+            //System.out.println("IGNORE "+ e + " for " + generateLogging.getToLocation());
+            //e.printStackTrace(System.out);
             if (e instanceof ProvisioningException) {
                 throw (ProvisioningException) e;
             }

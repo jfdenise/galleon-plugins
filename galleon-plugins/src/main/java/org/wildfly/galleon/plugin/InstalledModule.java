@@ -41,8 +41,9 @@ class InstalledModule {
     private final Element rootElement;
     private final Document document;
     private final Path targetPath;
-
+    private final Path moduleDescriptor;
     InstalledModule(Path moduleDescriptor, Path targetPath) throws IOException, ProvisioningDescriptionException {
+        this.moduleDescriptor = moduleDescriptor;
         final Builder builder = new Builder(false);
         try (BufferedReader reader = Files.newBufferedReader(moduleDescriptor, StandardCharsets.UTF_8)) {
             document = builder.build(reader);
@@ -51,6 +52,10 @@ class InstalledModule {
         }
         rootElement = document.getRootElement();
         this.targetPath = targetPath;
+    }
+
+    Path getDescriptor() {
+        return moduleDescriptor;
     }
 
     String getName() {
