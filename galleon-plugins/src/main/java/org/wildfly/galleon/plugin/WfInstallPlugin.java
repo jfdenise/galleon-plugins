@@ -51,6 +51,9 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -208,6 +211,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private Map<ProducerSpec, WildFlyChannelResolutionMode> channelResolutionModes = new LinkedHashMap<>();
     private Map<String, ProducerSpec> gaToProducer = new HashMap<>();
     private final Map<String, ShadedModel> shadedPackages = new HashMap<>();
+    private final ExecutorService loggingGenerationExecutor = Executors.newCachedThreadPool();
+    private LoggerClassGenerator loggingGenerator;
+    private List<Exception> loggingGenerationExceptions = new ArrayList<>();
 
     @Override
     protected List<ProvisioningOption> initPluginOptions() {
@@ -585,7 +591,21 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     throw new ProvisioningException("Unable to record provisioned artifacts", e);
                 }
             }
-
+            loggingGenerationExecutor.shutdown();
+            try {
+                loggingGenerationExecutor.awaitTermination(60, TimeUnit.SECONDS);
+                try {
+                    if (loggingGenerator != null) {
+                        loggingGenerator.close();
+                    }
+                } catch (IOException ex) {
+                }
+                if (!loggingGenerationExceptions.isEmpty()) {
+                    throw new ProvisioningException("Exceptions occured during logging generation " + loggingGenerationExceptions);
+                }
+            } catch (InterruptedException ex) {
+                //
+            }
         } finally {
             if (cacheOwner) {
                 threadContext.remove();
@@ -1334,6 +1354,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             }
         }
     }
+
     public void generateLogging(GenerateLogging generateLogging, PackageRuntime pkg) throws ProvisioningException {
         final MavenArtifact artifact = toArtifact(generateLogging, pkg);
         if(artifact == null) {
@@ -1356,39 +1377,43 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             Elements resourceRoots = module.getResourceRoots();
             if (resourceRoots != null && resourceRoots.size() != 0) {
                 List<Path> toScan = new ArrayList<>();
-                Set<Path> classPath = new HashSet<>();
                 Path sourceDir = locationPath.resolve("generated-sources");
                 Path classesDir = locationPath.resolve("translations");
                 for (Element elem : resourceRoots) {
                     String resourcePath = elem.getAttribute("path").getValue();
                     Path absolutePath = locationPath.resolve(resourcePath);
                     toScan.add(absolutePath);
-                    log.print("Adding " + absolutePath + " to scan for logging");
+                    log.verbose("Adding " + absolutePath + " to scan for logging");
                 }
                 toScan.add(artifact.getPath());
-                // JBoss Modules added to the classpath
-                MavenArtifact jbossModuleArtifact = Utils.toArtifactCoords(mergedArtifactVersions, JBOSS_MODULES_GA,
-                    false, channelArtifactResolution, requireChannel(gaToProducer.get(JBOSS_MODULES_GA)));
-                artifactResolver.resolve(jbossModuleArtifact);
-                classPath.add(jbossModuleArtifact.getPath());
-                // Compute the full transitive classpath from module dependencies
-                Elements deps = module.getDependencies();
-                if (deps != null) {
-                    Set<String> seen = new HashSet<>();
-                    for (Element dep : module.getDependencies()) {
-                        String moduleName = dep.getAttribute("name").getValue();
-                        InstalledModule depModule = buildModule(moduleName);
-                        if (depModule == null) {
-                            continue;
-                        }
-                        computeFullClassPath(depModule, classPath, seen);
-                    }
+                if (loggingGenerator == null) {
+                    log.verbose("Configuring support for localization generation");
+                    Set<Path> classPath = new HashSet<>();
+                    // JBoss Modules added to the classpath
+                    MavenArtifact jbossModuleArtifact = Utils.toArtifactCoords(mergedArtifactVersions, JBOSS_MODULES_GA,
+                            false, channelArtifactResolution, requireChannel(gaToProducer.get(JBOSS_MODULES_GA)));
+                    artifactResolver.resolve(jbossModuleArtifact);
+                    classPath.add(jbossModuleArtifact.getPath());
+                    addAllModuleJars(classPath);
+                    List<Path> classPathList = classPath.stream().collect(Collectors.toList());
+                    loggingGenerator = new LoggerClassGenerator(classPathList);
                 }
-                LoggerClassGenerator generator = new LoggerClassGenerator(sourceDir);
-                generator.generate(toScan, classPath.stream().collect(Collectors.toList()),
-                        classesDir, true);
-                module.addResourceRoot(classesDir.getFileName().toString());
-                module.store();
+                Runnable r = new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            loggingGenerator.generate(sourceDir, toScan,
+                                    classesDir, true);
+                            //long duration = System.currentTimeMillis() - t;
+                            //System.out.println("["+System.currentTimeMillis()+"]["+Thread.currentThread().threadId()+"]" + " GEN TIME " + duration);
+                            module.addResourceRoot(classesDir.getFileName().toString());
+                            module.store();
+                        } catch (Exception ex) {
+                            loggingGenerationExceptions.add(ex);
+                        }
+                    }
+                };
+                loggingGenerationExecutor.submit(r);
             } else {
                 throw new ProvisioningException("Translation required but no artifact in module " + location);
             }
@@ -1400,6 +1425,17 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             }
             throw new ProvisioningException("Failed to generate logging " + artifact, e);
         }
+    }
+
+    void addAllModuleJars(Set<Path> files) throws Exception {
+        Path rootDir = runtime.getStagedDir().resolve("modules");
+        try (Stream<Path> stream = Files.walk(rootDir)) {
+            stream.filter(WfInstallPlugin::isJarFile).forEach(path -> files.add(path.toAbsolutePath()));
+        }
+    }
+
+    static boolean isJarFile(Path f) {
+        return f.getFileName().toString().endsWith(".jar");
     }
 
     void processSchemas(String groupId, Path artifactPath) throws IOException {

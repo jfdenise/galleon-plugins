@@ -39,10 +39,7 @@ public class GenerateLogging implements WildFlyPackageTask {
 
     public GenerateLogging() {
     }
-    @Override
-    public Phase getPhase() {
-        return Phase.FINALIZING;
-    }
+
     public void setArtifact(String artifact) {
         this.artifact = artifact;
     }
