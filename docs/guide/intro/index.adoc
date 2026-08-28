@@ -112,13 +112,13 @@ and evidence recording each artifact's location within the distribution.
 
 |jboss-cyclonedx-licenses
 |String (`licenses.xml`, `pom`, or `off`)
-|licenses.xml
+|off
 |Controls how component license information is collected when SBOM generation is enabled.
-`licenses.xml` (the default) reads the `docs/licenses/*-licenses.xml` summaries shipped by the feature
+`off` (the default) disables license collection.
+`licenses.xml` reads the `docs/licenses/*-licenses.xml` summaries shipped by the feature
 packs; it requires no remote artifact resolution and works in `jboss-cyclonedx-only` mode.
 `pom` instead resolves declared licenses from Maven POMs (walking parent POMs), which performs remote
-resolution. `off` disables license collection. Additionally, `true` maps to `licenses.xml`
-and `false` maps to `off`.
+resolution. Additionally, `true` maps to `licenses.xml` and `false` maps to `off`.
 
 |jboss-cyclonedx-only
 |Boolean
@@ -222,7 +222,7 @@ each artifact resides in the distribution.
 |Path to write the SBOM to.
 
 |`jboss-cyclonedx-licenses`
-|License source: `licenses.xml` (default), `pom`, or `off`.
+|License source: `off` (default), `licenses.xml`, or `pom`.
 
 |`jboss-cyclonedx-pretty-print`
 |Indent the SBOM for readability.

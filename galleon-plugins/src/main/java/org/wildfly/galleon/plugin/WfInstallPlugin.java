@@ -182,7 +182,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             .setBooleanValueSet()
             .build();
     private static final ProvisioningOption OPTION_CYCLONEDX_LICENSES = ProvisioningOption.builder("jboss-cyclonedx-licenses")
-            .setDefaultValue(LICENSE_MODE_XML)
+            .setDefaultValue(LICENSE_MODE_OFF)
             .build();
     private static final ProvisioningOption OPTION_CYCLONEDX_PRETTY_PRINT = ProvisioningOption.builder("jboss-cyclonedx-pretty-print")
             .setBooleanValueSet()
@@ -370,7 +370,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private String resolveLicenseMode(ProvisioningRuntime runtime) throws ProvisioningException {
         String value = runtime.getOptionValue(OPTION_CYCLONEDX_LICENSES);
         if (value == null || value.isEmpty()) {
-            return LICENSE_MODE_XML;
+            return LICENSE_MODE_OFF;
         }
         value = value.trim();
         if (value.equalsIgnoreCase(LICENSE_MODE_XML) || value.equalsIgnoreCase("true")) {
