@@ -96,6 +96,7 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
     private final boolean prettyPrint;
     private LicenseSource licenseSource;
     private Version schemaVersion;
+    private String productCpe;
 
     private final List<RecordedArtifact> recorded = new ArrayList<>();
     private final List<ShadedComponent> shaded = new ArrayList<>();
@@ -132,6 +133,19 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
     public void setSchemaVersion(String schemaVersion) {
         this.schemaVersion = schemaVersion != null && !schemaVersion.isBlank()
                 ? SchemaVersions.resolve(schemaVersion) : null;
+    }
+
+    /**
+     * Overrides the product CPE of the SBOM's main component. By default the CPE
+     * is taken from the product-conf artifact or product module manifest; this
+     * override exists for the exceptional case where that CPE is wrong and must be
+     * corrected, or where the distribution carries none (e.g. JBoss EAP 7). When
+     * {@code null}, the manifest-derived CPE (if any) is used.
+     *
+     * @param cpe the CPE 2.3 string to force, or {@code null} to use the manifest CPE
+     */
+    public void setProductCpe(String cpe) {
+        this.productCpe = cpe != null && !cpe.isBlank() ? cpe : null;
     }
 
     @Override
@@ -246,13 +260,16 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
             md.setProjectArtifactId(release.name());
             md.setProjectVersion(release.version());
             md.setMainComponentPurl(syntheticProductPurl(release.name(), release.version()));
-            if (release.vendor() != null || release.cpe() != null) {
+            // The CPE normally comes from the product manifest; a configured CPE
+            // overrides it for the exceptional case where it must be corrected.
+            final String cpe = productCpe != null ? productCpe : release.cpe();
+            if (release.vendor() != null || cpe != null) {
                 final ProductInfo product = new ProductInfo();
                 if (release.vendor() != null) {
                     product.setPublisher(release.vendor());
                 }
-                if (release.cpe() != null) {
-                    product.setCpe(release.cpe());
+                if (cpe != null) {
+                    product.setCpe(cpe);
                 }
                 md.setProduct(product);
             }
@@ -301,20 +318,73 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
             if (!isProductConfArtifact(entry.getKey())) {
                 continue;
             }
-            final Attributes attrs = readJarManifest(entry.getValue());
-            if (attrs == null) {
-                continue;
-            }
-            final String name = attrs.getValue("JBoss-Product-Release-Name");
-            final String version = attrs.getValue("JBoss-Product-Release-Version");
-            if (name != null && version != null) {
-                return new ProductRelease(name, version,
-                        attrs.getValue("Implementation-Vendor"),
-                        attrs.getValue("JBossAS-Release-Version"),
-                        attrs.getValue("JBoss-Product-CPE"));
+            final ProductRelease release = productReleaseFromManifest(readJarManifest(entry.getValue()));
+            if (release != null) {
+                return release;
             }
         }
+        // No product-conf artifact (e.g. JBoss EAP 7): best-effort fallback to the
+        // provisioned product module manifest. This is only available in a full
+        // provision — in SBOM-only mode no modules are installed, so it yields no
+        // product branding.
+        return readStagedProductManifest();
+    }
+
+    /**
+     * Builds a {@link ProductRelease} from a product manifest's main attributes,
+     * or {@code null} when the required release name/version are absent. Shared by
+     * the product-conf artifact and the provisioned product module manifest.
+     */
+    private static ProductRelease productReleaseFromManifest(Attributes attrs) {
+        if (attrs == null) {
+            return null;
+        }
+        final String name = attrs.getValue("JBoss-Product-Release-Name");
+        final String version = attrs.getValue("JBoss-Product-Release-Version");
+        if (name == null || version == null) {
+            return null;
+        }
+        return new ProductRelease(name, version,
+                attrs.getValue("Implementation-Vendor"),
+                attrs.getValue("JBossAS-Release-Version"),
+                attrs.getValue("JBoss-Product-CPE"));
+    }
+
+    /**
+     * Reads the provisioned product module manifest
+     * ({@code modules/system/layers/base/org/jboss/as/product/<slot>/dir/META-INF/MANIFEST.MF})
+     * from the staged distribution, returning the first slot that carries a
+     * release name/version, or {@code null} if none is present.
+     */
+    private ProductRelease readStagedProductManifest() {
+        final Path productDir = stagedDir.resolve(
+                Path.of("modules", "system", "layers", "base", "org", "jboss", "as", "product"));
+        if (!Files.isDirectory(productDir)) {
+            return null;
+        }
+        try (Stream<Path> slots = Files.list(productDir)) {
+            for (Path slot : (Iterable<Path>) slots::iterator) {
+                final Path mf = slot.resolve(Path.of("dir", "META-INF", "MANIFEST.MF"));
+                if (!Files.isRegularFile(mf)) {
+                    continue;
+                }
+                final ProductRelease release = productReleaseFromManifest(readManifestFile(mf));
+                if (release != null) {
+                    return release;
+                }
+            }
+        } catch (IOException e) {
+            // best-effort: no product branding
+        }
         return null;
+    }
+
+    private static Attributes readManifestFile(Path manifestFile) {
+        try (InputStream is = Files.newInputStream(manifestFile)) {
+            return new Manifest(is).getMainAttributes();
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /**

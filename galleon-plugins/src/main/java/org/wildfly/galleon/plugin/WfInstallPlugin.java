@@ -189,6 +189,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             .build();
     private static final ProvisioningOption OPTION_CYCLONEDX_SCHEMA_VERSION = ProvisioningOption.builder("jboss-cyclonedx-schema-version")
             .build();
+    /* Overrides the product CPE in the SBOM's main component for the exceptional case where the manifest-derived CPE is wrong or absent */
+    private static final ProvisioningOption OPTION_CYCLONEDX_PRODUCT_CPE = ProvisioningOption.builder("jboss-cyclonedx-product-cpe")
+            .build();
     private ProvisioningRuntime runtime;
     MessageWriter log;
 
@@ -248,7 +251,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                              OPTION_CYCLONEDX, OPTION_CYCLONEDX_FORMAT,
                              OPTION_CYCLONEDX_OUTPUT, OPTION_CYCLONEDX_ONLY,
                              OPTION_CYCLONEDX_LICENSES, OPTION_CYCLONEDX_PRETTY_PRINT,
-                             OPTION_CYCLONEDX_SCHEMA_VERSION);
+                             OPTION_CYCLONEDX_SCHEMA_VERSION, OPTION_CYCLONEDX_PRODUCT_CPE);
     }
 
     public ProvisioningRuntime getRuntime() {
@@ -360,6 +363,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         } catch (IllegalArgumentException e) {
             throw new ProvisioningException("Unsupported value for jboss-cyclonedx-schema-version: " + e.getMessage(), e);
         }
+        recorder.setProductCpe(runtime.getOptionValue(OPTION_CYCLONEDX_PRODUCT_CPE));
         return recorder;
     }
 

@@ -141,9 +141,14 @@ resolution, file copying, or configuration generation is performed. The `jboss-c
 compact form. Only used when `jboss-cyclonedx` or `jboss-cyclonedx-only` is set to `true`.
 
 |jboss-cyclonedx-schema-version
-|String (e.g. `1.5`, `1.6`)
+|String (e.g. `1.6`, `1.7`)
 |Latest supported by the CycloneDX library
 |The CycloneDX schema version to use when serializing the SBOM. Only used when `jboss-cyclonedx` or `jboss-cyclonedx-only` is set to `true`.
+
+|jboss-cyclonedx-product-cpe
+|String (CPE 2.3)
+|NONE
+|Overrides the CPE of the SBOM's main component. Normally the CPE is read from the distribution's product manifest; set this only in the exceptional case where that CPE is wrong and must be corrected, or where the distribution carries none. Only used when `jboss-cyclonedx` or `jboss-cyclonedx-only` is set to `true`.
 
 |jboss-dump-config-scripts
 |String
@@ -224,6 +229,9 @@ each artifact resides in the distribution.
 
 |`jboss-cyclonedx-schema-version`
 |CycloneDX schema version (e.g. `1.6`); defaults to latest supported.
+
+|`jboss-cyclonedx-product-cpe`
+|Override the main component CPE (exceptional cases only; see below).
 |===
 
 See the options table above for full descriptions, types, and defaults.
@@ -250,9 +258,18 @@ the plugin reads it in both provisioning and SBOM-only modes. The main component
 (for example `pkg:generic/jboss-eap@8.1-update-7.1`) — a distribution is not itself a Maven artifact.
 * **publisher** from `Implementation-Vendor`.
 * a **`build-version` property** from `JBossAS-Release-Version` (for example `801.7.1.GA-redhat-00001`).
-* **cpe** from the manifest's optional `JBoss-Product-CPE` entry, when present.
+* **cpe** from the manifest's `JBoss-Product-CPE` entry, when present. This can be overridden with
+the `jboss-cyclonedx-product-cpe` option for the exceptional case where the manifest CPE is wrong, or supplied
+where the distribution carries none.
 
-If no product-conf branding is found, the main component falls back to a generic `wildfly` identity.
+If no product-conf artifact is present — for example JBoss EAP 7, which ships the product identity as a plain
+module rather than a Maven artifact — the plugin falls back, best effort, to the provisioned product module
+manifest at `modules/system/layers/base/org/jboss/as/product/<slot>/dir/META-INF/MANIFEST.MF`, reading the
+same `JBoss-Product-Release-Name` / `-Version` entries. Because this reads an installed file, it applies only
+to a full provision; in SBOM-only mode (no files installed) EAP 7 yields no product branding. That manifest
+carries only name and version, so use `jboss-cyclonedx-product-cpe` to add a CPE.
+
+If neither source provides branding, the main component falls back to a generic `wildfly` identity.
 
 ###### Where the product configuration comes from
 
@@ -289,7 +306,8 @@ excludes the sibling *version-marker* artifact of the same name that some featur
 * Community WildFly: `org.wildfly:wildfly-feature-pack-product-conf` (or the `-ee-` variant) → `WildFly` / the release version.
 
 If the manifest lacks `JBoss-Product-Release-Name` or `-Version`, or no matching artifact is present, the
-generic `wildfly` fallback is used.
+plugin falls back to the provisioned product module manifest described under _Main component_ above; failing
+that — or in SBOM-only mode, where that file is not installed — the generic `wildfly` fallback is used.
 
 ##### License information
 
