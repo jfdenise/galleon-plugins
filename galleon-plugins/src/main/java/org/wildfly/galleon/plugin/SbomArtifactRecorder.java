@@ -52,9 +52,8 @@ import dev.cyberstamp.maven.assembly.sbom.ProductInfo;
 import dev.cyberstamp.maven.assembly.sbom.SbomPipeline;
 import dev.cyberstamp.maven.assembly.sbom.SchemaVersions;
 import org.cyclonedx.Version;
+import org.cyclonedx.exception.GeneratorException;
 import org.cyclonedx.model.Bom;
-import org.cyclonedx.model.Component;
-import org.cyclonedx.model.Property;
 import org.jboss.galleon.universe.maven.MavenArtifact;
 import org.jboss.galleon.universe.maven.MavenUniverseException;
 
@@ -198,13 +197,9 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
                 .licenseSource(licenseSource)
                 .render();
         mergeEmbeddedSboms(bom);
-        if (release != null && release.buildVersion() != null
-                && bom.getMetadata() != null && bom.getMetadata().getComponent() != null) {
-            addProperty(bom.getMetadata().getComponent(), "build-version", release.buildVersion());
-        }
         try {
             BomWriter.write(bom, outputPath, format, prettyPrint, schemaVersion);
-        } catch (org.cyclonedx.exception.GeneratorException e) {
+        } catch (GeneratorException e) {
             throw new IOException("Failed to serialize CycloneDX BOM", e);
         }
     }
@@ -298,8 +293,7 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
     }
 
     /** Product release branding read from the provisioned distribution. */
-    private record ProductRelease(String name, String version, String vendor,
-            String buildVersion, String cpe) {
+    private record ProductRelease(String name, String version, String vendor, String cpe) {
     }
 
     /**
@@ -346,7 +340,6 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
         }
         return new ProductRelease(name, version,
                 attrs.getValue("Implementation-Vendor"),
-                attrs.getValue("JBossAS-Release-Version"),
                 attrs.getValue("JBoss-Product-CPE"));
     }
 
@@ -409,18 +402,6 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
         } catch (IOException e) {
             return null;
         }
-    }
-
-    private static void addProperty(Component component, String name, String value) {
-        final Property property = new Property();
-        property.setName(name);
-        property.setValue(value);
-        List<Property> properties = component.getProperties();
-        if (properties == null) {
-            properties = new ArrayList<>(1);
-            component.setProperties(properties);
-        }
-        properties.add(property);
     }
 
     /**

@@ -206,11 +206,10 @@ public class SbomArtifactRecorderTestCase {
         assertEquals("pkg:generic/wildfly@40.0.0.final", main.getPurl());
         assertEquals("pkg:generic/wildfly@40.0.0.final", main.getBomRef());
         assertEquals("WildFly", main.getPublisher());
-        assertNotNull("main component should carry a build-version property", main.getProperties());
-        assertTrue("build-version property should hold the exact build id",
-                main.getProperties().stream().anyMatch(
-                        p -> "build-version".equals(p.getName())
-                                && "40.0.0.Final-01".equals(p.getValue())));
+        // build-version is no longer emitted, even though the manifest carries JBossAS-Release-Version
+        assertTrue("no build-version property should be emitted",
+                main.getProperties() == null
+                        || main.getProperties().stream().noneMatch(p -> "build-version".equals(p.getName())));
         // the dependency-graph root must reference the synthetic bom-ref
         assertTrue("dependency root should use the synthetic product bom-ref",
                 bom.getDependencies().stream()

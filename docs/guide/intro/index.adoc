@@ -257,7 +257,6 @@ the plugin reads it in both provisioning and SBOM-only modes. The main component
 * **purl / bom-ref** a synthetic `pkg:generic` identity built from the name and version
 (for example `pkg:generic/jboss-eap@8.1-update-7.1`) — a distribution is not itself a Maven artifact.
 * **publisher** from `Implementation-Vendor`.
-* a **`build-version` property** from `JBossAS-Release-Version` (for example `40.0.0.Final-01`).
 * **cpe** from the manifest's `JBoss-Product-CPE` entry, when present. This can be overridden with
 the `jboss-cyclonedx-product-cpe` option for the exceptional case where the manifest CPE is wrong, or supplied
 where the distribution carries none.
@@ -290,7 +289,7 @@ server uses to report its identity. The chain is:
 ```
 . That referenced artifact — whose artifactId ends in `-product-conf` — carries the branding in its
 `META-INF/MANIFEST.MF` (`JBoss-Product-Release-Name`, `-Version`, `Implementation-Vendor`,
-`JBossAS-Release-Version`, and optionally `JBoss-Product-CPE`).
+and optionally `JBoss-Product-CPE`).
 
 Because the product-conf artifact is a normal module dependency, it is recorded during provisioning **and**
 in SBOM-only mode (where no files are installed but module templates are still walked). The plugin therefore
