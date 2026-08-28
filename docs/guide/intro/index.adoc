@@ -257,7 +257,7 @@ the plugin reads it in both provisioning and SBOM-only modes. The main component
 * **purl / bom-ref** a synthetic `pkg:generic` identity built from the name and version
 (for example `pkg:generic/jboss-eap@8.1-update-7.1`) — a distribution is not itself a Maven artifact.
 * **publisher** from `Implementation-Vendor`.
-* a **`build-version` property** from `JBossAS-Release-Version` (for example `801.7.1.GA-redhat-00001`).
+* a **`build-version` property** from `JBossAS-Release-Version` (for example `40.0.0.Final-01`).
 * **cpe** from the manifest's `JBoss-Product-CPE` entry, when present. This can be overridden with
 the `jboss-cyclonedx-product-cpe` option for the exceptional case where the manifest CPE is wrong, or supplied
 where the distribution carries none.

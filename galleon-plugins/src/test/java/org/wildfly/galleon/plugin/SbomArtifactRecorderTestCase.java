@@ -186,10 +186,10 @@ public class SbomArtifactRecorderTestCase {
         // release name/version/vendor. This is present in both a full provision
         // and SBOM-only mode, since it is recorded as a module dependency.
         final Path confJar = createProductConfJar(
-                "modules/system/layers/base/org/jboss/as/product/main/wildfly-feature-pack-product-conf-8.1.jar",
-                "JBoss EAP", "8.1 Update 7.1", "JBoss by Red Hat", "801.7.1.GA-redhat-00001");
+                "modules/system/layers/base/org/jboss/as/product/main/wildfly-feature-pack-product-conf-40.0.0.Final.jar",
+                "WildFly", "40.0.0.Final", "WildFly", "40.0.0.Final-01");
         final MavenArtifact confArtifact =
-                mavenArtifact("org.jboss.eap", "wildfly-feature-pack-product-conf", "8.1");
+                mavenArtifact("org.wildfly", "wildfly-feature-pack-product-conf", "40.0.0.Final");
         confArtifact.setExtension("jar");
         confArtifact.setPath(confJar);
 
@@ -201,30 +201,30 @@ public class SbomArtifactRecorderTestCase {
         final Bom bom = new JsonParser().parse(outputFile.toFile());
         final Component main = bom.getMetadata().getComponent();
         assertNotNull(main);
-        assertEquals("JBoss EAP", main.getName());
-        assertEquals("8.1 Update 7.1", main.getVersion());
-        assertEquals("pkg:generic/jboss-eap@8.1-update-7.1", main.getPurl());
-        assertEquals("pkg:generic/jboss-eap@8.1-update-7.1", main.getBomRef());
-        assertEquals("JBoss by Red Hat", main.getPublisher());
+        assertEquals("WildFly", main.getName());
+        assertEquals("40.0.0.Final", main.getVersion());
+        assertEquals("pkg:generic/wildfly@40.0.0.final", main.getPurl());
+        assertEquals("pkg:generic/wildfly@40.0.0.final", main.getBomRef());
+        assertEquals("WildFly", main.getPublisher());
         assertNotNull("main component should carry a build-version property", main.getProperties());
         assertTrue("build-version property should hold the exact build id",
                 main.getProperties().stream().anyMatch(
                         p -> "build-version".equals(p.getName())
-                                && "801.7.1.GA-redhat-00001".equals(p.getValue())));
+                                && "40.0.0.Final-01".equals(p.getValue())));
         // the dependency-graph root must reference the synthetic bom-ref
         assertTrue("dependency root should use the synthetic product bom-ref",
                 bom.getDependencies().stream()
-                        .anyMatch(d -> "pkg:generic/jboss-eap@8.1-update-7.1".equals(d.getRef())));
+                        .anyMatch(d -> "pkg:generic/wildfly@40.0.0.final".equals(d.getRef())));
     }
 
     @Test
     public void mainComponentIncludesCpeFromProductConf() throws Exception {
-        final String cpe = "cpe:2.3:a:redhat:jboss_enterprise_application_platform:8.1:*:*:*:*:*:*:*";
+        final String cpe = "cpe:2.3:a:wildfly:wildfly:40.0.0:*:*:*:*:*:*:*";
         final Path confJar = createProductConfJar(
-                "modules/system/layers/base/org/jboss/as/product/main/wildfly-ee-feature-pack-product-conf-8.1.jar",
-                "JBoss EAP", "8.1 Update 7.1", "JBoss by Red Hat", "801.7.1.GA-redhat-00001", cpe);
+                "modules/system/layers/base/org/jboss/as/product/main/wildfly-feature-pack-product-conf-40.0.0.Final.jar",
+                "WildFly", "40.0.0.Final", "WildFly", "40.0.0.Final-01", cpe);
         final MavenArtifact confArtifact =
-                mavenArtifact("org.jboss.eap", "wildfly-ee-feature-pack-product-conf", "8.1");
+                mavenArtifact("org.wildfly", "wildfly-feature-pack-product-conf", "40.0.0.Final");
         confArtifact.setExtension("jar");
         confArtifact.setPath(confJar);
 
@@ -243,7 +243,7 @@ public class SbomArtifactRecorderTestCase {
     public void mainComponentHasNoCpeWhenProductConfOmitsIt() throws Exception {
         final Path confJar = createProductConfJar(
                 "modules/system/layers/base/org/jboss/as/product/main/wildfly-feature-pack-product-conf-40.jar",
-                "WildFly", "40.0.0.Final", "JBoss by Red Hat", "40.0.0.Final");
+                "WildFly", "40.0.0.Final", "WildFly", "40.0.0.Final");
         final MavenArtifact confArtifact =
                 mavenArtifact("org.wildfly", "wildfly-feature-pack-product-conf", "40.0.0.Final");
         confArtifact.setExtension("jar");
@@ -645,9 +645,9 @@ public class SbomArtifactRecorderTestCase {
 
     @Test
     public void productReleaseFallsBackToStagedProductManifest() throws Exception {
-        // EAP 7 ships no *-product-conf artifact; the release name/version are
+        // When no *-product-conf artifact is present, the release name/version are
         // read (best effort) from the provisioned product module MANIFEST.MF.
-        createStagedProductManifest("eap", "JBoss EAP", "7.4.25.GA");
+        createStagedProductManifest("wildfly-full", "WildFly", "40.0.0.Final", null);
 
         final Path outputFile = installBase.resolve("sbom.cdx.json");
         final SbomArtifactRecorder recorder = createRecorder(outputFile, "json");
@@ -657,19 +657,34 @@ public class SbomArtifactRecorderTestCase {
         final Bom bom = new JsonParser().parse(outputFile.toFile());
         final Component main = bom.getMetadata().getComponent();
         assertNotNull(main);
-        assertEquals("JBoss EAP", main.getName());
-        assertEquals("7.4.25.GA", main.getVersion());
-        assertEquals("pkg:generic/jboss-eap@7.4.25.ga", main.getPurl());
+        assertEquals("WildFly", main.getName());
+        assertEquals("40.0.0.Final", main.getVersion());
+        assertEquals("pkg:generic/wildfly@40.0.0.final", main.getPurl());
+    }
+
+    @Test
+    public void productCpeReadFromStagedProductManifest() throws Exception {
+        // A CPE present in the staged product module manifest is used as-is.
+        final String cpe = "cpe:2.3:a:wildfly:wildfly:40.0.0:*:*:*:*:*:*:*";
+        createStagedProductManifest("wildfly-full", "WildFly", "40.0.0.Final", cpe);
+
+        final Path outputFile = installBase.resolve("sbom.cdx.json");
+        final SbomArtifactRecorder recorder = createRecorder(outputFile, "json");
+        recorder.record(mavenArtifact("org.test", "test", "1.0"), createArtifactFile("lib/test-1.0.jar"));
+        recorder.writeManifest();
+
+        final Bom bom = new JsonParser().parse(outputFile.toFile());
+        assertEquals(cpe, bom.getMetadata().getComponent().getCpe());
     }
 
     @Test
     public void productConfArtifactTakesPrecedenceOverStagedManifest() throws Exception {
-        createStagedProductManifest("eap", "WRONG", "0.0.0");
+        createStagedProductManifest("wildfly-full", "WRONG", "0.0.0", null);
         final Path confJar = createProductConfJar(
-                "modules/system/layers/base/org/jboss/as/product/main/wildfly-ee-feature-pack-product-conf-8.1.jar",
-                "JBoss EAP", "8.1 Update 7.1", "JBoss by Red Hat", "801.7.1.GA-redhat-00001");
+                "modules/system/layers/base/org/jboss/as/product/main/wildfly-feature-pack-product-conf-40.0.0.Final.jar",
+                "WildFly", "40.0.0.Final", "WildFly", "40.0.0.Final");
         final MavenArtifact confArtifact =
-                mavenArtifact("org.jboss.eap", "wildfly-ee-feature-pack-product-conf", "8.1");
+                mavenArtifact("org.wildfly", "wildfly-feature-pack-product-conf", "40.0.0.Final");
         confArtifact.setExtension("jar");
         confArtifact.setPath(confJar);
 
@@ -680,15 +695,15 @@ public class SbomArtifactRecorderTestCase {
 
         final Bom bom = new JsonParser().parse(outputFile.toFile());
         final Component main = bom.getMetadata().getComponent();
-        assertEquals("JBoss EAP", main.getName());
-        assertEquals("8.1 Update 7.1", main.getVersion());
+        assertEquals("WildFly", main.getName());
+        assertEquals("40.0.0.Final", main.getVersion());
     }
 
     @Test
     public void productCpeOptionSuppliesCpeForStagedManifestFallback() throws Exception {
-        // The staged EAP 7 manifest carries no CPE; the configured option supplies it.
-        createStagedProductManifest("eap", "JBoss EAP", "7.4.25.GA");
-        final String cpe = "cpe:2.3:a:redhat:jboss_enterprise_application_platform:7.4:*:*:*:*:*:*:*";
+        // The staged manifest carries no CPE; the configured option supplies it.
+        createStagedProductManifest("wildfly-full", "WildFly", "40.0.0.Final", null);
+        final String cpe = "cpe:2.3:a:wildfly:wildfly:40.0.0:*:*:*:*:*:*:*";
 
         final Path outputFile = installBase.resolve("sbom.cdx.json");
         final SbomArtifactRecorder recorder = createRecorder(outputFile, "json");
@@ -701,14 +716,14 @@ public class SbomArtifactRecorderTestCase {
     }
 
     @Test
-    public void productCpeOptionOverridesProductConfCpe() throws Exception {
-        final String manifestCpe = "cpe:2.3:a:redhat:jboss_enterprise_application_platform:8.1:*:*:*:*:*:*:*";
-        final String overrideCpe = "cpe:2.3:a:redhat:jboss_enterprise_application_platform:8.1-override:*:*:*:*:*:*:*";
+    public void productCpeOptionOverridesManifestCpe() throws Exception {
+        final String manifestCpe = "cpe:2.3:a:wildfly:wildfly:40.0.0:*:*:*:*:*:*:*";
+        final String overrideCpe = "cpe:2.3:a:wildfly:wildfly:40.0.0-override:*:*:*:*:*:*:*";
         final Path confJar = createProductConfJar(
-                "modules/system/layers/base/org/jboss/as/product/main/wildfly-ee-feature-pack-product-conf-8.1.jar",
-                "JBoss EAP", "8.1 Update 7.1", "JBoss by Red Hat", "801.7.1.GA-redhat-00001", manifestCpe);
+                "modules/system/layers/base/org/jboss/as/product/main/wildfly-feature-pack-product-conf-40.0.0.Final.jar",
+                "WildFly", "40.0.0.Final", "WildFly", "40.0.0.Final", manifestCpe);
         final MavenArtifact confArtifact =
-                mavenArtifact("org.jboss.eap", "wildfly-ee-feature-pack-product-conf", "8.1");
+                mavenArtifact("org.wildfly", "wildfly-feature-pack-product-conf", "40.0.0.Final");
         confArtifact.setExtension("jar");
         confArtifact.setPath(confJar);
 
@@ -722,7 +737,7 @@ public class SbomArtifactRecorderTestCase {
         assertEquals(overrideCpe, bom.getMetadata().getComponent().getCpe());
     }
 
-    private Path createStagedProductManifest(String slot, String name, String version) throws Exception {
+    private Path createStagedProductManifest(String slot, String name, String version, String cpe) throws Exception {
         final Path mf = installBase.resolve(Path.of("modules", "system", "layers", "base",
                 "org", "jboss", "as", "product", slot, "dir", "META-INF", "MANIFEST.MF"));
         Files.createDirectories(mf.getParent());
@@ -731,6 +746,9 @@ public class SbomArtifactRecorderTestCase {
         attrs.put(Attributes.Name.MANIFEST_VERSION, "1.0");
         attrs.putValue("JBoss-Product-Release-Name", name);
         attrs.putValue("JBoss-Product-Release-Version", version);
+        if (cpe != null) {
+            attrs.putValue("JBoss-Product-CPE", cpe);
+        }
         try (OutputStream os = Files.newOutputStream(mf)) {
             manifest.write(os);
         }
