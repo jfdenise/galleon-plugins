@@ -451,7 +451,13 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         if (runtime.isOptionSet(OPTION_CYCLONEDX_OUTPUT)) {
             final String value = runtime.getOptionValue(OPTION_CYCLONEDX_OUTPUT);
             if (value != null && !value.isEmpty()) {
-                return Path.of(value);
+                Path targetFile = runtime.getStagedDir().resolve(value).normalize();
+                if (!targetFile.
+                        startsWith(runtime.getStagedDir().normalize() + File.separator)) {
+                    throw new ProvisioningException("sbom file path " + value
+                            + " must be relative to the server installation directory");
+                }
+                return targetFile;
             }
         }
         final String fileName = "json".equalsIgnoreCase(format) ? "sbom.cdx.json" : "sbom.cdx.xml";

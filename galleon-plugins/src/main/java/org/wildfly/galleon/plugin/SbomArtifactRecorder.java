@@ -198,6 +198,9 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
                 .render();
         mergeEmbeddedSboms(bom);
         try {
+            if (!Files.exists(outputPath.getParent())) {
+                Files.createDirectories(outputPath.getParent());
+            }
             BomWriter.write(bom, outputPath, format, prettyPrint, schemaVersion);
         } catch (GeneratorException e) {
             throw new IOException("Failed to serialize CycloneDX BOM", e);
