@@ -72,6 +72,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
     private final boolean channelArtifactResolution;
     private final boolean requireChannel;
     private final WfInstallPlugin.ArtifactGroupResolver resolver;
+    private List<MavenArtifact> resolvedArtifacts;
     public ShadedModel(boolean requireChannel,
             Path shadedModel,
             Path tmpPath,
@@ -98,30 +99,32 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
     }
 
     public List<MavenArtifact> getArtifacts() throws ProvisioningException, IOException {
-        List<MavenArtifact> artifacts = new ArrayList<>();
-        Element shadedDependencies = rootElement.getFirstChildElement("shaded-dependencies",
-                rootElement.getNamespaceURI());
-        Elements dependencies = shadedDependencies.getChildElements();
-        Map<String, MavenArtifact> map = new HashMap<>();
-        for (int i = 0; i < dependencies.size(); i++) {
-            Element e = dependencies.get(i);
-            MavenArtifact a = Utils.toArtifactCoords(mergedArtifactVersions, e.getValue(), false, channelArtifactResolution, requireChannel);
-            map.put(e.getValue(), a);
-        }
-        resolver.resolve(map.values());
-        for (Entry<String, MavenArtifact> entry : map.entrySet()) {
-            MavenArtifact a = entry.getValue();
-            if (log.isVerboseEnabled()) {
-                log.verbose("Shaded model dependency: " + entry.getKey() + " resolved version " + a.getVersion());
+        if (resolvedArtifacts == null) {
+            resolvedArtifacts = new ArrayList<>();
+            Element shadedDependencies = rootElement.getFirstChildElement("shaded-dependencies",
+                    rootElement.getNamespaceURI());
+            Elements dependencies = shadedDependencies.getChildElements();
+            Map<String, MavenArtifact> map = new HashMap<>();
+            for (int i = 0; i < dependencies.size(); i++) {
+                Element e = dependencies.get(i);
+                MavenArtifact a = Utils.toArtifactCoords(mergedArtifactVersions, e.getValue(), false, channelArtifactResolution, requireChannel);
+                map.put(e.getValue(), a);
             }
-            Path transformed = installer.installCopiedArtifact(a);
-            a.setPath(transformed);
-            artifacts.add(a);
-            if (recorder.isPresent()) {
-                recorder.get().cache(a, a.getPath());
+            resolver.resolve(map.values());
+            for (Entry<String, MavenArtifact> entry : map.entrySet()) {
+                MavenArtifact a = entry.getValue();
+                if (log.isVerboseEnabled()) {
+                    log.verbose("Shaded model dependency: " + entry.getKey() + " resolved version " + a.getVersion());
+                }
+                Path transformed = installer.installCopiedArtifact(a);
+                a.setPath(transformed);
+                resolvedArtifacts.add(a);
+                if (recorder.isPresent()) {
+                    recorder.get().cache(a, a.getPath());
+                }
             }
         }
-        return artifacts;
+        return resolvedArtifacts;
     }
 
     public Map<String, String> getManifestEntries() {
@@ -149,39 +152,6 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
     public String getName() {
         return rootElement.getFirstChildElement("name",
                 rootElement.getNamespaceURI()).getValue();
-    }
-
-    /**
-     * Extracts dependency coordinates from the shaded model without resolving them.
-     *
-     * <p>Unlike {@link #getArtifacts()}, this method does not resolve artifacts
-     * from Maven or install them. It only parses the coordinate strings and
-     * resolves their versions from the provided version properties map.</p>
-     *
-     * @param versionProps              the merged artifact version properties
-     * @param channelArtifactResolution whether channel artifact resolution is enabled
-     * @param requireChannel            whether channel resolution is required
-     * @return the list of dependency artifacts with coordinates populated
-     * @throws ProvisioningException if coordinate parsing fails
-     */
-    public List<MavenArtifact> getDependencyCoords(Map<String, String> versionProps,
-            boolean channelArtifactResolution, boolean requireChannel) throws ProvisioningException {
-        final List<MavenArtifact> result = new ArrayList<>();
-        final Element shadedDependencies = rootElement.getFirstChildElement("shaded-dependencies",
-                rootElement.getNamespaceURI());
-        if (shadedDependencies == null) {
-            return result;
-        }
-        final Elements dependencies = shadedDependencies.getChildElements();
-        for (int i = 0; i < dependencies.size(); i++) {
-            final MavenArtifact artifact = Utils.toArtifactCoords(
-                    versionProps, dependencies.get(i).getValue(), false,
-                    channelArtifactResolution, requireChannel);
-            if (artifact != null) {
-                result.add(artifact);
-            }
-        }
-        return result;
     }
 
     public void buildJar(Path shadedJar) throws IOException, ProvisioningException {

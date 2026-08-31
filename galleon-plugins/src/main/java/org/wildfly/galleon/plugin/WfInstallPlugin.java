@@ -1419,9 +1419,8 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
 
     private List<MavenArtifact> getShadedDependencyCoords(ShadedModel model, PackageRuntime pkg) {
         try {
-            return model.getDependencyCoords(mergedArtifactVersions, channelArtifactResolution,
-                    requireChannel(pkg.getFeaturePackRuntime().getFPID().getProducer()));
-        } catch (Exception e) {
+            return model.getArtifacts();
+        } catch (IOException | ProvisioningException e) {
             log.verbose("Failed to extract shaded dependency coordinates: %s", e.getMessage());
             return List.of();
         }
