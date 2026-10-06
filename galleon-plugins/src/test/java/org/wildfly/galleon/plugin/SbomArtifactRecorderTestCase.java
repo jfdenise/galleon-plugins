@@ -11,6 +11,7 @@ import java.util.jar.Manifest;
 import java.util.zip.GZIPInputStream;
 
 import dev.cyberstamp.maven.assembly.sbom.SchemaVersions;
+import java.util.Collections;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.component.evidence.Occurrence;
@@ -857,11 +858,11 @@ public class SbomArtifactRecorderTestCase {
     }
 
     private SbomArtifactRecorder createRecorder(Path outputFile, String format) {
-        return new SbomArtifactRecorder(installBase, outputFile, format, false, false, new DefaultMessageWriter());
+        return new SbomArtifactRecorder(installBase, outputFile, format, false, false, Collections.emptyMap(), new DefaultMessageWriter());
     }
 
     private SbomArtifactRecorder createRecorder(Path outputFile, String format, boolean compress) {
-        return new SbomArtifactRecorder(installBase, outputFile, format, false, compress, new DefaultMessageWriter());
+        return new SbomArtifactRecorder(installBase, outputFile, format, false, compress, Collections.emptyMap(), new DefaultMessageWriter());
     }
 
     private Path createArtifactFile(String path) throws Exception {

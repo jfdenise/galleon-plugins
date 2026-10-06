@@ -57,6 +57,7 @@ import org.cyclonedx.Version;
 import org.cyclonedx.exception.GeneratorException;
 import org.cyclonedx.model.Bom;
 import org.jboss.galleon.MessageWriter;
+import org.jboss.galleon.universe.FeaturePackLocation;
 import org.jboss.galleon.universe.maven.MavenArtifact;
 import org.jboss.galleon.universe.maven.MavenUniverseException;
 
@@ -112,12 +113,15 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
     /** Resolved JAR paths for embedded-SBOM detection. */
     private final Map<ArtifactCoords, Path> resolvedJarPaths = new LinkedHashMap<>();
     private final MessageWriter log;
-    public SbomArtifactRecorder(Path stagedDir, Path outputPath, String format, boolean prettyPrint, boolean compress, MessageWriter log) {
+    private final Map<FeaturePackLocation.ProducerSpec, ProductRelease> customCPEs;
+    public SbomArtifactRecorder(Path stagedDir, Path outputPath, String format, boolean prettyPrint, boolean compress, Map<FeaturePackLocation.ProducerSpec, ProductRelease> customCPEs,
+            MessageWriter log) {
         this.stagedDir = stagedDir;
         this.outputPath = outputPath;
         this.format = format;
         this.prettyPrint = prettyPrint;
         this.compress = compress;
+        this.customCPEs = customCPEs;
         this.log = log;
     }
 
@@ -326,7 +330,7 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
     }
 
     /** Product release branding read from the provisioned distribution. */
-    private record ProductRelease(String name, String version, String vendor, String cpe) {
+    public record ProductRelease(String name, String version, String vendor, String cpe) {
     }
 
     /**

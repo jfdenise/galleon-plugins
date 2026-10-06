@@ -279,6 +279,19 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             property = "wildfly.sbom.include-incomplete-coords-artifacts-in-sbom", defaultValue = "false")
     protected Boolean includeIncompleCoordsArtifactsInSbom;
 
+    @Parameter(alias = "sbom-cpe", property = "wildfly.sbom.cpe", required = false)
+    protected String sbomCPE;
+
+    @Parameter(alias = "sbom-product-name", property = "wildfly.sbom.product-name", required = false)
+    protected String sbomProductName;
+
+    @Parameter(alias = "sbom-product-vendor", property = "wildfly.sbom.product-vendor", required = false)
+    protected String sbomProductVendor;
+
+    @Parameter(alias = "sbom-product-version", property = "wildfly.sbom.product-version", required = false)
+    protected String sbomProductVersion;
+
+
     private MavenProjectArtifactVersions artifactVersions;
 
     private Map<String, FeaturePackDescription> fpDependencies = Collections.emptyMap();
@@ -1286,6 +1299,18 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
         final Properties properties = new Properties();
         if (includeIncompleCoordsArtifactsInSbom) {
             properties.put(WfConstants.WILDFLY_SBOM_INCLUDE_INCOMPLETE_COORDS_ARTIFACTS, includeIncompleCoordsArtifactsInSbom.toString());
+        }
+        if (sbomCPE != null) {
+            properties.put(WfConstants.WILDFLY_SBOM_CPE, sbomCPE);
+        }
+        if (sbomProductName != null) {
+            properties.put(WfConstants.WILDFLY_SBOM_NAME, sbomProductName);
+        }
+        if (sbomProductVendor != null) {
+            properties.put(WfConstants.WILDFLY_SBOM_VENDOR, sbomProductVendor);
+        }
+        if (sbomProductVersion != null) {
+            properties.put(WfConstants.WILDFLY_SBOM_VENDOR, sbomProductVersion);
         }
         return properties;
     }

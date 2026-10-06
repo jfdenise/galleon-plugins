@@ -253,6 +253,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
     private final Map<String, String> resolvedVersionsProperties = new HashMap<>();
     private Map<ProducerSpec, WildFlyChannelResolutionMode> channelResolutionModes = new LinkedHashMap<>();
     private Map<ProducerSpec, Boolean> sbomIncludeIncompleteArtifacts = new LinkedHashMap<>();
+    private Map<ProducerSpec, SbomArtifactRecorder.ProductRelease> customCPEs = new LinkedHashMap<>();
     private Map<String, ProducerSpec> gaToProducer = new HashMap<>();
     private final Map<String, ShadedModel> shadedPackages = new HashMap<>();
 
@@ -400,7 +401,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
         failOnSbomError = getBooleanOption(OPTION_CYCLONEDX_FAIL_ON_ERROR);
         log.verbose("CycloneDX SBOM generation enabled, format=%s, output=%s, licenses=%s, prettyPrint=%s, compress=%s, schemaVersion=%s, failOnError=%s",
                 format, outputPath, licenseMode, prettyPrint, compress, schemaVersion != null ? schemaVersion : "default", failOnSbomError);
-        final SbomArtifactRecorder recorder = new SbomArtifactRecorder(runtime.getStagedDir(), outputPath, format, prettyPrint, compress, log);
+        final SbomArtifactRecorder recorder = new SbomArtifactRecorder(runtime.getStagedDir(), outputPath, format, prettyPrint, compress, customCPEs, log);
         try {
             recorder.setSchemaVersion(schemaVersion);
         } catch (IllegalArgumentException e) {
@@ -624,6 +625,14 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                     if (Boolean.parseBoolean(sbomProps.get(WfConstants.WILDFLY_SBOM_INCLUDE_INCOMPLETE_COORDS_ARTIFACTS))) {
                         sbomIncludeIncompleteArtifacts = CollectionUtils.put(sbomIncludeIncompleteArtifacts,
                                 fp.getFPID().getProducer(), true);
+                    }
+                    String cpe = sbomProps.get(WfConstants.WILDFLY_SBOM_CPE);
+                    if (cpe != null) {
+                       String name = sbomProps.get(WfConstants.WILDFLY_SBOM_NAME);
+                       String vendor = sbomProps.get(WfConstants.WILDFLY_SBOM_VENDOR);
+                       String version = sbomProps.get(WfConstants.WILDFLY_SBOM_VERSION);
+                       customCPEs = CollectionUtils.put(customCPEs,
+                                fp.getFPID().getProducer(), new SbomArtifactRecorder.ProductRelease(name, version, vendor, cpe));
                     }
                 }
 
