@@ -26,6 +26,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -54,6 +55,10 @@ import dev.cyberstamp.maven.assembly.sbom.SchemaVersions;
 import org.cyclonedx.Version;
 import org.cyclonedx.exception.GeneratorException;
 import org.cyclonedx.model.Bom;
+import org.cyclonedx.model.BomReference;
+import org.cyclonedx.model.Component;
+import org.cyclonedx.model.Dependency;
+import org.wildfly.galleon.plugin.ComponentsFilter.Placement;
 import org.jboss.galleon.universe.maven.MavenArtifact;
 import org.jboss.galleon.universe.maven.MavenUniverseException;
 
@@ -105,12 +110,18 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
     private final Set<ArtifactCoords> shadedDependencyCoords = new HashSet<>();
     /** Resolved JAR paths for embedded-SBOM detection. */
     private final Map<ArtifactCoords, Path> resolvedJarPaths = new LinkedHashMap<>();
+    /** Frameworks (keyed by purl) and the bom-refs of the components they provide, filled by {@link #buildModel}. */
+    private final Map<String, FrameworkProvides> frameworks = new LinkedHashMap<>();
+    private final ComponentsFilter filter;
+    private final Map<ArtifactCoords, MavenArtifact> mavenArtifacts = new HashMap<>();
 
-    public SbomArtifactRecorder(Path stagedDir, Path outputPath, String format, boolean prettyPrint) {
+    public SbomArtifactRecorder(Path stagedDir, Path outputPath, String format, boolean prettyPrint,
+            ComponentsFilter filter) {
         this.stagedDir = stagedDir;
         this.outputPath = outputPath;
         this.format = format;
         this.prettyPrint = prettyPrint;
+        this.filter = filter;
     }
 
     /**
@@ -202,6 +213,7 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
                 .licenseSource(licenseSource)
                 .render();
         mergeEmbeddedSboms(bom);
+        addFrameworks(bom);
         try {
             if (!Files.exists(outputPath.getParent())) {
                 Files.createDirectories(outputPath.getParent());
@@ -220,6 +232,7 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
      */
     private AssemblyComponents buildModel(ProductRelease release) {
         final AssemblyComponents model = new AssemblyComponents();
+        frameworks.clear();
         // Provisioning records a flat artifact inventory, not a resolved transitive
         // dependency graph, so every component's dependencies are unknown and must
         // not be declared as empty leaf entries in the CycloneDX dependency graph.
@@ -227,19 +240,94 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
             if (isShadedOnly(ra.coords())) {
                 continue;
             }
-            model.addComponent(PackageComponent.of(ra.coords(), ra.archivePath(), ra.hash(), false));
+            final Placement placement = filter.placeMavenArtifact(mavenArtifacts.get(ra.coords()), release);
+            if (placement.included()) {
+                model.addComponent(PackageComponent.of(ra.coords(), ra.archivePath(), ra.hash(), false));
+                provide(placement, ra.coords().toPurl().toString());
+            }
         }
         for (ShadedComponent sc : shaded) {
-            final List<AssemblyComponent> nested = new ArrayList<>(sc.deps().size());
-            for (ArtifactCoords dep : sc.deps()) {
-                nested.add(PackageComponent.of(dep, null, null, false));
+            final Placement placement = filter.placeShaded(sc.name(), release);
+            if (placement.included()) {
+                provide(placement, new GenericPackageRef(sc.name(), sc.version()).toPurl().toString());
+                final List<AssemblyComponent> nested = new ArrayList<>(sc.deps().size());
+                for (ArtifactCoords dep : sc.deps()) {
+                    nested.add(PackageComponent.of(dep, null, null, false));
+                }
+                model.addComponent(new PackageComponent(
+                        new GenericPackageRef(sc.name(), sc.version()),
+                        sc.archivePath(), null, List.of(), nested, false));
             }
-            model.addComponent(new PackageComponent(
-                    new GenericPackageRef(sc.name(), sc.version()),
-                    sc.archivePath(), null, List.of(), nested, false));
         }
         model.setMetadata(buildMetadata(release));
         return model;
+    }
+
+    /** Remembers that the component identified by {@code bomRef} is provided by the placement's framework, if any. */
+    private void provide(Placement placement, String bomRef) {
+        final CpeInfo framework = placement.framework();
+        if (framework != null) {
+            frameworks.computeIfAbsent(framework.getPurl(), k -> new FrameworkProvides(framework)).provided().add(bomRef);
+        }
+    }
+
+    /** A framework and the bom-refs of the components it provides. */
+    private record FrameworkProvides(CpeInfo info, Set<String> provided) {
+        FrameworkProvides(CpeInfo info) {
+            this(info, new java.util.TreeSet<>());
+        }
+    }
+
+    /**
+     * Adds each framework as an excluded {@code framework} component. The
+     * framework {@code provides} the components it contributes, the main
+     * component depends on the framework rather than directly on these components.
+     */
+    private void addFrameworks(Bom bom) {
+        if (frameworks.isEmpty()) {
+            return;
+        }
+        final String mainRef = bom.getMetadata().getComponent().getBomRef();
+        Dependency main = null;
+        if (bom.getDependencies() != null) {
+            for (Dependency d : bom.getDependencies()) {
+                if (mainRef.equals(d.getRef())) {
+                    main = d;
+                    break;
+                }
+            }
+        }
+        if (main == null) {
+            main = new Dependency(mainRef);
+            bom.addDependency(main);
+        }
+        final List<Dependency> mainDeps = new ArrayList<>();
+        if (main.getDependencies() != null) {
+            mainDeps.addAll(main.getDependencies());
+        }
+        for (FrameworkProvides fp : frameworks.values()) {
+            final CpeInfo info = fp.info();
+            final Component framework = new Component();
+            framework.setType(Component.Type.FRAMEWORK);
+            framework.setBomRef(info.getPurl());
+            framework.setName(info.getName());
+            framework.setVersion(info.getVersion());
+            framework.setPurl(info.getPurl());
+            framework.setCpe(info.getCpe());
+            framework.setScope(Component.Scope.EXCLUDED);
+            bom.addComponent(framework);
+
+            final Dependency dep = new Dependency(info.getPurl());
+            for (String ref : fp.provided()) {
+                dep.addProvides(new BomReference(ref));
+            }
+            bom.addDependency(dep);
+
+            mainDeps.removeIf(d -> fp.provided().contains(d.getRef()));
+            mainDeps.add(new Dependency(info.getPurl()));
+        }
+        mainDeps.sort(java.util.Comparator.comparing(Dependency::getRef));
+        main.setDependencies(mainDeps);
     }
 
     /**
@@ -304,7 +392,7 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
     }
 
     /** Product release branding read from the provisioned distribution. */
-    private record ProductRelease(String name, String version, String vendor, String cpe) {
+    record ProductRelease(String name, String version, String vendor, String cpe) {
     }
 
     /**
@@ -473,6 +561,9 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
         if (resolved != null && Files.exists(resolved)) {
             resolvedJarPaths.put(coords, resolved);
         }
+        // Filtering applies to MavenArtifact
+        // We must keep a reference on it.
+        mavenArtifacts.put(coords, artifact);
     }
 
     private Path resolvedPath(MavenArtifact artifact) {
@@ -499,7 +590,7 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
         return absStagedDir.relativize(absTarget).toString().replace(File.separatorChar, '/');
     }
 
-    private String deriveShadedName(String toLocation) {
+    static String deriveShadedName(String toLocation) {
         String fileName = toLocation;
         final int lastSlash = toLocation.lastIndexOf('/');
         if (lastSlash >= 0) {

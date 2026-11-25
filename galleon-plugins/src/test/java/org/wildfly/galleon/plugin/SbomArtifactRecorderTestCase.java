@@ -28,6 +28,19 @@ import static org.junit.Assert.assertTrue;
 
 public class SbomArtifactRecorderTestCase {
 
+    static class IncludeAllComponentsFilter implements ComponentsFilter {
+
+        @Override
+        public Placement placeMavenArtifact(MavenArtifact artifact, SbomArtifactRecorder.ProductRelease release) {
+            return Placement.PRODUCT;
+        }
+
+        @Override
+        public Placement placeShaded(String shadedName, SbomArtifactRecorder.ProductRelease release) {
+            return Placement.PRODUCT;
+        }
+    }
+
     @Rule
     public TemporaryFolder temp = new TemporaryFolder();
     private Path installBase;
@@ -754,6 +767,144 @@ public class SbomArtifactRecorderTestCase {
         assertEquals(overrideCpe, bom.getMetadata().getComponent().getCpe());
     }
 
+    @Test
+    public void componetFilterArtifactExclusion() throws Exception {
+        final String cpe = "cpe:2.3:a:wildfly:wildfly:40.0.0:*:*:*:*:*:*:*";
+        final Path confJar = createProductConfJar(
+                "modules/system/layers/base/org/jboss/as/product/main/wildfly-feature-pack-product-conf-40.0.0.Final.jar",
+                "WildFly", "40.0.0.Final", "WildFly", "40.0.0.Final-01", cpe);
+        final MavenArtifact confArtifact =
+                mavenArtifact("org.wildfly", "wildfly-feature-pack-product-conf", "40.0.0.Final");
+        confArtifact.setExtension("jar");
+        confArtifact.setPath(confJar);
+        final MavenArtifact artifact = mavenArtifact("org.wildfly.core", "wildfly-launcher", "31.0.0.Final");
+        final MavenArtifact artifact2 = mavenArtifact("org.foo", "bar", "1.0.0.Final");
+        artifact2.addMetadata("exclude", "true");
+        final Path target = createArtifactFile("modules/launcher/wildfly-launcher-31.0.0.Final.jar");
+        final Path target2 = createArtifactFile("modules/foo/bar-1.0.0.Final.jar");
+        final Path outputFile = installBase.resolve("sbom.cdx.json");
+
+        final SbomArtifactRecorder recorder = createRecorder(outputFile, "json", new ComponentsFilter(){
+            @Override
+            public Placement placeMavenArtifact(MavenArtifact artifact, SbomArtifactRecorder.ProductRelease release) {
+                return artifact.getMetadata().containsKey("exclude") ? Placement.EXCLUDED : Placement.PRODUCT;
+            }
+
+            @Override
+            public Placement placeShaded(String shadedName, SbomArtifactRecorder.ProductRelease release) {
+                return Placement.PRODUCT;
+            }
+        });
+        recorder.record(confArtifact, confJar);
+        recorder.record(artifact, target);
+        recorder.record(artifact2, target2);
+        recorder.writeManifest();
+
+        final Bom bom = new JsonParser().parse(outputFile.toFile());
+        final Component main = bom.getMetadata().getComponent();
+        assertNotNull(main);
+        assertEquals(cpe, main.getCpe());
+        final Component component = findComponent(bom, "wildfly-launcher");
+        assertNotNull(component);
+        final Component component2 = findComponent(bom, "bar");
+        assertNull(component2);
+    }
+
+    @Test
+    public void componentProvidedByFramework() throws Exception {
+        final String cpe = "cpe:2.3:a:wildfly:wildfly:40.0.0:*:*:*:*:*:*:*";
+        final Path confJar = createProductConfJar(
+                "modules/system/layers/base/org/jboss/as/product/main/wildfly-feature-pack-product-conf-40.0.0.Final.jar",
+                "WildFly", "40.0.0.Final", "WildFly", "40.0.0.Final-01", cpe);
+        final MavenArtifact confArtifact =
+                mavenArtifact("org.wildfly", "wildfly-feature-pack-product-conf", "40.0.0.Final");
+        confArtifact.setExtension("jar");
+        confArtifact.setPath(confJar);
+        final MavenArtifact artifact = mavenArtifact("org.wildfly.core", "wildfly-launcher", "31.0.0.Final");
+        final MavenArtifact artifact2 = mavenArtifact("org.foo", "bar", "1.0.0.Final");
+        artifact2.addMetadata("framework", "true");
+        final Path target = createArtifactFile("modules/launcher/wildfly-launcher-31.0.0.Final.jar");
+        final Path target2 = createArtifactFile("modules/foo/bar-1.0.0.Final.jar");
+        final Path outputFile = installBase.resolve("sbom.cdx.json");
+
+        final CpeInfo xp = new CpeInfo(CpeResolutionMode.LOCAL, "cpe:/a:redhat:xp:7.0", "XP",
+                "pkg:generic/xp", "7.0.0.Final");
+        final SbomArtifactRecorder recorder = createRecorder(outputFile, "json", new ComponentsFilter(){
+            @Override
+            public Placement placeMavenArtifact(MavenArtifact artifact, SbomArtifactRecorder.ProductRelease release) {
+                return artifact.getMetadata().containsKey("framework") ? Placement.framework(xp) : Placement.PRODUCT;
+            }
+
+            @Override
+            public Placement placeShaded(String shadedName, SbomArtifactRecorder.ProductRelease release) {
+                return Placement.PRODUCT;
+            }
+        });
+        recorder.record(confArtifact, confJar);
+        recorder.record(artifact, target);
+        recorder.record(artifact2, target2);
+        recorder.writeManifest();
+
+        final Bom bom = new JsonParser().parse(outputFile.toFile());
+        final String mainRef = bom.getMetadata().getComponent().getBomRef();
+        final Component framework = findComponent(bom, "XP");
+        assertNotNull(framework);
+        assertEquals(Component.Type.FRAMEWORK, framework.getType());
+        assertEquals(Component.Scope.EXCLUDED, framework.getScope());
+        assertEquals("pkg:generic/xp@7.0.0.final", framework.getBomRef());
+        assertEquals("cpe:/a:redhat:xp:7.0", framework.getCpe());
+        assertNotNull(findComponent(bom, "bar"));
+
+        final org.cyclonedx.model.Dependency main = bom.getDependencies().stream()
+                .filter(d -> mainRef.equals(d.getRef())).findFirst().get();
+        final List<String> mainDeps = main.getDependencies().stream().map(d -> d.getRef()).toList();
+        assertTrue(mainDeps.contains("pkg:generic/xp@7.0.0.final"));
+        assertFalse(mainDeps.contains("pkg:maven/org.foo/bar@1.0.0.Final"));
+        assertTrue(mainDeps.contains("pkg:maven/org.wildfly.core/wildfly-launcher@31.0.0.Final"));
+
+        final org.cyclonedx.model.Dependency fwDep = bom.getDependencies().stream()
+                .filter(d -> "pkg:generic/xp@7.0.0.final".equals(d.getRef())).findFirst().get();
+        assertEquals(List.of("pkg:maven/org.foo/bar@1.0.0.Final"),
+                fwDep.getProvides().stream().map(r -> r.getRef()).toList());
+    }
+
+    @Test
+    public void shadedComponentWithNestedDependenciesExclusion() throws Exception {
+        final Path outputFile = installBase.resolve("sbom.cdx.json");
+        String location = "bin/client/jboss-cli-client.jar";
+        String location2 = "bin/foo.jar";
+        final SbomArtifactRecorder recorder = createRecorder(outputFile, "json", new ComponentsFilter(){
+            @Override
+            public Placement placeMavenArtifact(MavenArtifact artifact, SbomArtifactRecorder.ProductRelease release) {
+                return Placement.PRODUCT;
+            }
+
+            @Override
+            public Placement placeShaded(String shadedName, SbomArtifactRecorder.ProductRelease release) {
+                return shadedName.equals(SbomArtifactRecorder.deriveShadedName(location))
+                        ? Placement.EXCLUDED : Placement.PRODUCT;
+            }
+        });
+
+        final List<MavenArtifact> deps = List.of(
+                mavenArtifact("org.jboss", "dep-a", "1.0"),
+                mavenArtifact("org.jboss", "dep-b", "2.0"));
+        final Path target = createArtifactFile(location);
+        recorder.recordShadedComponent(location, "31.0.0.Final", target, deps);
+
+        final List<MavenArtifact> deps2 = List.of(
+                mavenArtifact("org.jboss", "dep-a", "1.0"),
+                mavenArtifact("org.jboss", "dep-b", "2.0"));
+        final Path target2 = createArtifactFile(location2);
+        recorder.recordShadedComponent(location2, "31.0.0.Final", target2, deps2);
+        recorder.writeManifest();
+
+        final Bom bom = new JsonParser().parse(outputFile.toFile());
+        assertEquals(1, bom.getComponents().size());
+        final Component shaded = findComponent(bom, "jboss-cli-client");
+        assertNull(shaded);
+    }
+
     private Path createStagedProductManifest(String slot, String name, String version, String cpe) throws Exception {
         final Path mf = installBase.resolve(Path.of("modules", "system", "layers", "base",
                 "org", "jboss", "as", "product", slot, "dir", "META-INF", "MANIFEST.MF"));
@@ -781,7 +932,11 @@ public class SbomArtifactRecorderTestCase {
     }
 
     private SbomArtifactRecorder createRecorder(Path outputFile, String format) {
-        return new SbomArtifactRecorder(installBase, outputFile, format, false);
+        return new SbomArtifactRecorder(installBase, outputFile, format, false, new IncludeAllComponentsFilter());
+    }
+
+    private SbomArtifactRecorder createRecorder(Path outputFile, String format, ComponentsFilter filter) {
+        return new SbomArtifactRecorder(installBase, outputFile, format, false, filter);
     }
 
     private Path createArtifactFile(String path) throws Exception {

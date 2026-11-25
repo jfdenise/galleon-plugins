@@ -43,6 +43,7 @@ import org.jboss.galleon.Errors;
 import org.jboss.galleon.ProvisioningException;
 import org.jboss.galleon.layout.FeaturePackLayout;
 import org.jboss.galleon.layout.ProvisioningLayout;
+import org.jboss.galleon.universe.FeaturePackLocation.ProducerSpec;
 import org.jboss.galleon.universe.maven.MavenArtifact;
 import org.jboss.galleon.util.CollectionUtils;
 import org.jboss.galleon.util.IoUtils;
@@ -105,9 +106,18 @@ public class Utils {
 
     public static MavenArtifact toArtifactCoords(Map<String, String> versionProps, String str, boolean optional,
             boolean channelArtifactResolution, boolean requireChannel) throws ProvisioningException {
+        return toArtifactCoords(versionProps, str, optional, channelArtifactResolution, requireChannel, null);
+    }
+
+    public static MavenArtifact toArtifactCoords(Map<String, String> versionProps, String str, boolean optional,
+            boolean channelArtifactResolution, boolean requireChannel, ProducerSpec producerSpec) throws ProvisioningException {
         final MavenArtifact artifact = new MavenArtifact();
         if (requireChannel) {
             artifact.addMetadata(WfInstallPlugin.REQUIRES_CHANNEL_FOR_ARTIFACT_RESOLUTION_PROPERTY, "true");
+        }
+        // Happens in tests
+        if (producerSpec != null) {
+            artifact.addMetadata(WfInstallPlugin.ARTIFACT_FP_PRODUCER_SPEC, producerSpec.toString());
         }
         artifact.setExtension(MavenArtifact.EXT_JAR);
         resolveArtifact(str, artifact, channelArtifactResolution);

@@ -40,6 +40,7 @@ import nu.xom.ParsingException;
 import org.jboss.galleon.MessageWriter;
 import org.jboss.galleon.ProvisioningDescriptionException;
 import org.jboss.galleon.ProvisioningException;
+import org.jboss.galleon.universe.FeaturePackLocation.ProducerSpec;
 import org.jboss.galleon.universe.maven.MavenArtifact;
 import org.jboss.galleon.util.IoUtils;
 import org.jboss.galleon.util.ZipUtils;
@@ -70,6 +71,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
     private final Installer installer;
     private final boolean channelArtifactResolution;
     private final boolean requireChannel;
+    private final ProducerSpec producerSpec;
     private final WfInstallPlugin.ArtifactGroupResolver resolver;
     private List<MavenArtifact> resolvedArtifacts;
     public ShadedModel(boolean requireChannel,
@@ -79,8 +81,10 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
             MessageWriter log, Map<String, String> mergedArtifactVersions,
             Installer installer,
             boolean channelArtifactResolution,
-            Optional<ArtifactRecorder> recorder) throws IOException, ProvisioningDescriptionException {
+            Optional<ArtifactRecorder> recorder,
+            ProducerSpec producerSpec) throws IOException, ProvisioningDescriptionException {
         this.requireChannel = requireChannel;
+        this.producerSpec = producerSpec;
         this.tmpPath = tmpPath;
         this.resolver = resolver;
         this.log = log;
@@ -117,7 +121,7 @@ public class ShadedModel implements Utils.ArtifactResourceConsumer {
         final Elements dependencies = shadedDependencies.getChildElements();
         for (int i = 0; i < dependencies.size(); i++) {
             coords.add(Utils.toArtifactCoords(mergedArtifactVersions, dependencies.get(i).getValue(),
-                    false, channelArtifactResolution, requireChannel));
+                    false, channelArtifactResolution, requireChannel, producerSpec));
         }
         return coords;
     }

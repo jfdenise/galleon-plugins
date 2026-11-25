@@ -79,7 +79,8 @@ abstract class AbstractModuleTemplateProcessor {
                 return null;
             }
             try {
-                return Utils.toArtifactCoords(this.versionProps, coordsStr, false, channelArtifactResolution, requireChannel);
+                return Utils.toArtifactCoords(this.versionProps, coordsStr, false, channelArtifactResolution, requireChannel,
+                        template.getProducerSpec());
             } catch (ProvisioningException e) {
                 throw new IOException("Failed to resolve full coordinates for " + coordsStr, e);
             }
@@ -177,7 +178,8 @@ abstract class AbstractModuleTemplateProcessor {
                 } else {
                     artifactName = exprBody;
                 }
-                final MavenArtifact artifact = Utils.toArtifactCoords(versionProps, artifactName, false, channelArtifactResolution, requireChannel);
+                final MavenArtifact artifact = Utils.toArtifactCoords(versionProps, artifactName, false, channelArtifactResolution, requireChannel,
+                        template.getProducerSpec());
                 if (artifact != null) {
                     versionAttribute.setValue(artifact.getVersion());
                 }

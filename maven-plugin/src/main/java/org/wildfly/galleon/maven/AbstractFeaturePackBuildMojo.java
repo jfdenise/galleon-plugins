@@ -106,6 +106,7 @@ import org.wildfly.channel.ManifestRequirement;
 import org.wildfly.channel.MavenCoordinate;
 import org.wildfly.galleon.maven.build.tasks.ResourcesTask;
 import org.wildfly.galleon.plugin.ArtifactCoords;
+import org.wildfly.galleon.plugin.CpeResolutionMode;
 import org.wildfly.galleon.plugin.WfConstants;
 import org.wildfly.galleon.plugin.WildFlyChannelResolutionMode;
 
@@ -203,6 +204,22 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
     @Parameter(alias = "wildfly-channel-resolution-mode", required = false, defaultValue = "NOT_REQUIRED",
             property = "wildfly.feature.pack.require.channel.resolution")
     protected WildFlyChannelResolutionMode wildflyChannelResolutionMode;
+
+    /**
+     * If the WildFly product-conf artifact contains a CPE, the provisioned maven artifacts
+     * of other feature-packs present in the provisioning configuration are not added to the generated SBOM.
+     * In order to advertise that a feature-pack is in the scope of the WildFly CPE, set this parameter to `SERVER_PRODUCT_CONF`.
+     * If no CPE is defined, then the content of feature-packs are added to the generated SBOM whatever the value of this parameter.
+     */
+    @Parameter(alias = "sbom-cpe-resolution-mode", property = "wildfly.sbom.sbom-cpe-resolution-mode", required = false, defaultValue = "LOCAL")
+    protected CpeResolutionMode cpeResolutionMode;
+
+    @Parameter(alias = "sbom-cpe", property = "wildfly.sbom.sbom-cpe", required = false)
+    protected String sbomCpe;
+    @Parameter(alias = "sbom-name", property = "wildfly.sbom.sbom-name", required = false)
+    protected String sbomName;
+    @Parameter(alias = "sbom-purl", property = "wildfly.sbom.sbom-purl", required = false)
+    protected String sbomPurl;
 
     @Parameter(alias = "deploy-channel-manifest", required = false, defaultValue = "true",
             property = "wildfly.feature.pack.deploy-channel-manifest")
@@ -431,6 +448,12 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             getWildFlyChannelProperties().store(out, "WildFly channel properties");
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to store WildFly channel properties", e);
+        }
+        // WildFly sbom configuration
+        try (OutputStream out = Files.newOutputStream(resourcesWildFly.resolve(WfConstants.WILDFLY_SBOM_PROPERTIES))) {
+            getWildFlySBOMProperties().store(out, "WildFly SBOM properties");
+        } catch (IOException e) {
+            throw new MojoExecutionException("Failed to store WildFly SBOM properties", e);
         }
         // Copy resources from src.
         try {
@@ -805,6 +828,30 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
     private Properties getWildFlyChannelProperties() throws MojoExecutionException {
         final Properties properties = new Properties();
         properties.put(WfConstants.WILDFLY_CHANNEL_RESOLUTION_PROP, wildflyChannelResolutionMode.toString());
+        return properties;
+    }
+
+    private Properties getWildFlySBOMProperties() throws MojoExecutionException {
+        final Properties properties = new Properties();
+        properties.put(WfConstants.WILDFLY_SBOM_CPE_RESOLUTION_MODE, cpeResolutionMode.name());
+        if (sbomCpe != null) {
+            if (!cpeResolutionMode.equals(CpeResolutionMode.LOCAL)) {
+                throw new MojoExecutionException("A CPE has been set although the resolution mode is not local.");
+            }
+            if (sbomName == null) {
+                throw new MojoExecutionException("A CPE has been set although the name is null.");
+            }
+            if (sbomPurl == null) {
+                throw new MojoExecutionException("A CPE has been set although the purl is null.");
+            }
+            properties.put(WfConstants.WILDFLY_SBOM_CPE, sbomCpe);
+        }
+        if (sbomName != null) {
+            properties.put(WfConstants.WILDFLY_SBOM_NAME, sbomName);
+        }
+        if (sbomPurl != null) {
+            properties.put(WfConstants.WILDFLY_SBOM_PURL, sbomPurl);
+        }
         return properties;
     }
 
