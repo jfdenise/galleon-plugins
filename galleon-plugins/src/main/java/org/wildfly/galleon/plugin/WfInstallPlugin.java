@@ -157,10 +157,7 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
             if (info == null) {
                 return Placement.PRODUCT;
             }
-            if (info.getMode() == null) {
-                return Placement.EXCLUDED;
-            }
-            if (!CpeResolutionMode.LOCAL.equals(info.getMode())) {
+            if (info.getMode() != null && !CpeResolutionMode.LOCAL.equals(info.getMode())) {
                 return Placement.PRODUCT;
             }
             return info.isFramework() ? Placement.framework(info) : Placement.EXCLUDED;
@@ -650,8 +647,9 @@ public class WfInstallPlugin extends ProvisioningPluginWithOptions implements In
                 String cpe = sbomProps.get(WfConstants.WILDFLY_SBOM_CPE);
                 String name = sbomProps.get(WfConstants.WILDFLY_SBOM_NAME);
                 String purl = sbomProps.get(WfConstants.WILDFLY_SBOM_PURL);
+                String publisher = sbomProps.get(WfConstants.WILDFLY_SBOM_PUBLISHER);
                 cpeInfos = CollectionUtils.put(cpeInfos,
-                            fp.getFPID().getProducer().toString(), new CpeInfo(resMode, cpe, name, purl, fp.getFPID().getBuild()));
+                            fp.getFPID().getProducer().toString(), new CpeInfo(resMode, cpe, name, purl, publisher, fp.getFPID().getBuild()));
             }
 
             if(fp.containsPackage(WfConstants.DOCS_SCHEMA)) {

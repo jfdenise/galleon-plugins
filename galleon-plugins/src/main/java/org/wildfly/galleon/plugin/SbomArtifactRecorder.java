@@ -311,6 +311,7 @@ public class SbomArtifactRecorder implements ArtifactRecorder {
             framework.setType(Component.Type.FRAMEWORK);
             framework.setBomRef(info.getPurl());
             framework.setName(info.getName());
+            framework.setPublisher(info.getPublisher());
             framework.setVersion(info.getVersion());
             framework.setPurl(info.getPurl());
             framework.setCpe(info.getCpe());

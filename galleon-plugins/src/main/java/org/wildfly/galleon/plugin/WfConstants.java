@@ -57,6 +57,7 @@ public interface WfConstants {
     String WILDFLY_SBOM_CPE_RESOLUTION_MODE = "cpe-resolution-mode";
     String WILDFLY_SBOM_NAME = "name";
     String WILDFLY_SBOM_PROPERTIES = "wildfly-sboms.properties";
+    String WILDFLY_SBOM_PUBLISHER = "publisher";
     String WILDFLY_SBOM_PURL = "purl";
     String SCHEMA = "schema";
     String SCHEMA_GROUPS_TXT = "schema-groups.txt";

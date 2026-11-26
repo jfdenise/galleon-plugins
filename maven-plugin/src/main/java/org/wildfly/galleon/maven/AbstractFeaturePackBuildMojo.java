@@ -214,12 +214,34 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
     @Parameter(alias = "sbom-cpe-resolution-mode", property = "wildfly.sbom.sbom-cpe-resolution-mode", required = false, defaultValue = "LOCAL")
     protected CpeResolutionMode cpeResolutionMode;
 
+    /**
+     * The CPE of this feature-pack. It gives the feature-pack its own identity in the generated SBOM: the
+     * feature-pack is reported as a framework component that provides the artifacts it contributes.
+     * Can only be set when `sbom-cpe-resolution-mode` is `LOCAL`. The `sbom-name` and `sbom-purl` default
+     * to the Maven coordinates of the feature-pack when they are not set.
+     */
     @Parameter(alias = "sbom-cpe", property = "wildfly.sbom.sbom-cpe", required = false)
     protected String sbomCpe;
+    /**
+     * The name of the framework component that represents this feature-pack in the generated SBOM.
+     * Optional, defaults to the artifactId of the feature-pack. Only used when `sbom-cpe` is set.
+     */
     @Parameter(alias = "sbom-name", property = "wildfly.sbom.sbom-name", required = false)
     protected String sbomName;
+    /**
+     * The package URL of the framework component that represents this feature-pack in the generated SBOM.
+     * The version of the purl is the version of the framework component. If it contains no version (no `@`),
+     * the feature-pack version is appended when the SBOM is generated (`unknown` if the feature-pack has no version).
+     * Optional, defaults to `pkg:maven/<groupId>/<artifactId>` of the feature-pack. Only used when `sbom-cpe` is set.
+     */
     @Parameter(alias = "sbom-purl", property = "wildfly.sbom.sbom-purl", required = false)
     protected String sbomPurl;
+    /**
+     * The publisher of the framework component that represents this feature-pack in the generated SBOM.
+     * Optional. Only used when `sbom-cpe` is set.
+     */
+    @Parameter(alias = "sbom-publisher", property = "wildfly.sbom.sbom-publisher", required = false)
+    protected String sbomPublisher;
 
     @Parameter(alias = "deploy-channel-manifest", required = false, defaultValue = "true",
             property = "wildfly.feature.pack.deploy-channel-manifest")
@@ -838,19 +860,15 @@ public abstract class AbstractFeaturePackBuildMojo extends AbstractMojo {
             if (!cpeResolutionMode.equals(CpeResolutionMode.LOCAL)) {
                 throw new MojoExecutionException("A CPE has been set although the resolution mode is not local.");
             }
-            if (sbomName == null) {
-                throw new MojoExecutionException("A CPE has been set although the name is null.");
-            }
-            if (sbomPurl == null) {
-                throw new MojoExecutionException("A CPE has been set although the purl is null.");
-            }
             properties.put(WfConstants.WILDFLY_SBOM_CPE, sbomCpe);
+            // The identity of the feature-pack defaults to its Maven coordinates.
+            properties.put(WfConstants.WILDFLY_SBOM_NAME, sbomName == null ? project.getArtifactId() : sbomName);
+            // No version, it is appended at provisioning time.
+            properties.put(WfConstants.WILDFLY_SBOM_PURL, sbomPurl == null
+                    ? "pkg:maven/" + project.getGroupId() + "/" + project.getArtifactId() : sbomPurl);
         }
-        if (sbomName != null) {
-            properties.put(WfConstants.WILDFLY_SBOM_NAME, sbomName);
-        }
-        if (sbomPurl != null) {
-            properties.put(WfConstants.WILDFLY_SBOM_PURL, sbomPurl);
+        if (sbomPublisher != null) {
+            properties.put(WfConstants.WILDFLY_SBOM_PUBLISHER, sbomPublisher);
         }
         return properties;
     }
